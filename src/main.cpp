@@ -28,6 +28,14 @@ void setup() {
     Serial.println("FLASH Wasn't Initalized!");
   }
 
+  Serial.println("Setting up accelerometer and gyroscope...");
+  while (!sox.begin_SPI(PA0, PB3, PB4,
+                 PB5)){
+    Serial.println("Could not find sensor. Check wiring.");
+    delay(10);
+  }
+
+
   Serial.println("Setting ACL and Gyro ranges and data rates...");
   sox.setAccelRange(LSM6DS_ACCEL_RANGE_16_G);
   sox.setGyroRange(LSM6DS_GYRO_RANGE_2000_DPS );
