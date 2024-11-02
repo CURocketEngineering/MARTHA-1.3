@@ -5,6 +5,8 @@
 #include "FlashDriver.h"
 #include "bmp_spi.h"
 #include "bmp3.h"
+#include "bmp_spi.h"
+#include "bmp3.h"
 
 #include "data_handling/SensorDataHandler.h"
 #include "data_handling/DataSaverSPI.h"
@@ -12,7 +14,12 @@
 
 
 
+
+
 Adafruit_LSM6DSOX sox;
+Adafruit_LIS3MDL  mag;
+FlashDriver       flash;
+BMP3_SPI          baro(PA1, PB5, PB4, PB3);
 Adafruit_LIS3MDL  mag;
 FlashDriver       flash;
 BMP3_SPI          baro(PA1, PB5, PB4, PB3);
@@ -28,10 +35,26 @@ void setup() {
 
   FlashStatus resultFlash = flash.initFlash();
   if(resultFlash == FLASH_SUCCESS){
+
+  pinMode(PA4, OUTPUT); //FLASH
+
+
+  FlashStatus resultFlash = flash.initFlash();
+  if(resultFlash == FLASH_SUCCESS){
     Serial.println("Flash Initialized!");
   }else{
     Serial.println("FLASH Wasn't Initalized!");
   }
+
+
+
+  Serial.println("Setting up accelerometer and gyroscope...");
+  while (!sox.begin_SPI(PA0, PB3, PB4,
+                 PB5)){
+    Serial.println("Could not find sensor. Check wiring.");
+    delay(10);
+  }
+
 
 
 
@@ -93,6 +116,36 @@ void setup() {
     delay(10);
   }
 
+
+  // Setup for the magnetometer
+  Serial.println("Setting up magnetometer...");
+  while (!mag.begin_SPI(PA3, PB3, PB4,
+                 PB5)) {
+    Serial.println("Could not find sensor. Check wiring.");
+    delay(10);
+  }
+  mag.setDataRate(LIS3MDL_DATARATE_155_HZ);
+  mag.setRange(LIS3MDL_RANGE_4_GAUSS);
+  mag.setOperationMode(LIS3MDL_SINGLEMODE);
+  mag.setPerformanceMode(LIS3MDL_MEDIUMMODE);
+
+  mag.setIntThreshold(500);
+  mag.configInterrupt(false, false, true, // enable z axis
+                          true, // polarity
+                          false, // don't latch
+                          true); // enabled!
+
+  if (mag.getDataRate() != LIS3MDL_DATARATE_155_HZ) {
+    Serial.println("Failed to set Mag data rate");
+  }
+
+    // Setup for the magnetometer
+  Serial.println("Setting up barometer...");
+  if(!baro.init()) {
+    Serial.println("Could not find sensor. Check wiring.");
+    delay(10);
+  }
+
 }
 
 void loop() {
@@ -105,7 +158,13 @@ void loop() {
   float magz;
   bmp_data sensorData;
   baro.getSensorData(&sensorData, true);
+  float magx;
+  float magy;
+  float magz;
+  bmp_data sensorData;
+  baro.getSensorData(&sensorData, true);
   sox.getEvent(&accel, &gyro, &temp);
+  mag.readMagneticField(magx, magy, magz);
   mag.readMagneticField(magx, magy, magz);
 
   Serial.print("BMP390 DATA:\r\n");
