@@ -4,9 +4,6 @@
 #include "Adafruit_LIS3MDL.h"
 #include "FlashDriver.h"
 #include "bmp_spi.h"
-#include "bmp3.h"
-#include "bmp_spi.h"
-#include "bmp3.h"
 
 #include "data_handling/SensorDataHandler.h"
 #include "data_handling/DataSaverSPI.h"
@@ -28,8 +25,6 @@ void setup() {
   Serial.begin(115200);
 
   pinMode(PA4, OUTPUT); //FLASH
-
-
 
   FlashStatus resultFlash = flash.initFlash();
   if(resultFlash == FLASH_SUCCESS){
@@ -94,6 +89,7 @@ void setup() {
     // Setup for the magnetometer
   Serial.println("Setting up barometer...");
   if(!baro.init()) {
+    // May need to change chip id in driver (0x50 -> 0x60)
     Serial.println("Could not find sensor. Check wiring.");
     delay(10);
   }
@@ -109,10 +105,14 @@ void loop() {
   float magy;
   float magz;
   bmp_data sensorData;
+
+  baro.init();
   baro.getSensorData(&sensorData, true);
+  mag.begin_SPI(PA3);
+  mag.readMagneticField(magx, magy, magz);
+  sox.begin_SPI(PA0);
   sox.getEvent(&accel, &gyro, &temp);
-  mag.readMagneticField(magx, magy, magz);
-  mag.readMagneticField(magx, magy, magz);
+
 
   Serial.print("BMP390 DATA:\r\n");
   Serial.print("Pressure: "); Serial.print(sensorData.pressure); Serial.print(" Pa\t");
@@ -131,6 +131,32 @@ void loop() {
   Serial.print("X: "); Serial.print(magx); Serial.print(" µT\t");
   Serial.print("Y: "); Serial.print(magy); Serial.print(" µT\t");
   Serial.print("Z: "); Serial.print(magz); Serial.println(" µT\n");
+
+  const uint32_t testAddress = 0x00;
+  const int testLength = 255; 
+  uint8_t testData[testLength]; 
+  uint8_t readBuffer[testLength]; 
+  for (int i = 0; i < testLength; i++) {
+    testData[i] = 0xAE; 
+  }
+
+  flash.eraseSector(testAddress);
+  FlashStatus writeStatus = flash.writeFlash(testAddress, testData, testLength);
+  FlashStatus readStatus = flash.readFlash(testAddress, readBuffer, testLength);
+
+  bool dataMatches = true;
+  for (size_t i = 0; i < testLength; i++) {
+    if (testData[i] != readBuffer[i]) {
+      dataMatches = false;
+      break;
+    }
+  }
+
+  if (dataMatches) {
+    Serial.println("Flash data verification successful: Data matches!\n");
+  } else {
+    Serial.println("Flash data verification failed: Data does not match.\n");
+  }
 
 
   delay(1000);
