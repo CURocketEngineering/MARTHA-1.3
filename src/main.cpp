@@ -4,6 +4,7 @@
 #include "Adafruit_LIS3MDL.h"
 #include "FlashDriver.h"
 #include "bmp_spi.h"
+#include "pins.h"
 
 #include "data_handling/SensorDataHandler.h"
 #include "data_handling/DataSaverSPI.h"
@@ -11,7 +12,7 @@
 
 
 
-
+int last_led_toggle = 0;
 
 Adafruit_LSM6DSOX sox;
 Adafruit_LIS3MDL  mag;
@@ -20,11 +21,13 @@ BMP3_SPI          baro(PA1, PB5, PB4, PB3);
 
 void setup() {
 
+  pinMode(PA9, OUTPUT); //LED 
+
 
   // put your setup code here, to run once:
   Serial.begin(115200);
 
-  pinMode(PA4, OUTPUT); //FLASH
+  // pinMode(PA4, OUTPUT); //FLASH
 
   FlashStatus resultFlash = flash.initFlash();
   if(resultFlash == FLASH_SUCCESS){
@@ -36,8 +39,8 @@ void setup() {
 
 
   Serial.println("Setting up accelerometer and gyroscope...");
-  while (!sox.begin_SPI(PA0, PB3, PB4,
-                 PB5)){
+  while (!sox.begin_SPI(SENSOR_LSM_CS, SENSOR_SCK , SENSOR_MISO,
+                 SENSOR_MOSI)){
     Serial.println("Could not find sensor. Check wiring.");
     delay(10);
   }
@@ -66,8 +69,8 @@ void setup() {
 
   // Setup for the magnetometer
   Serial.println("Setting up magnetometer...");
-  while (!mag.begin_SPI(PA3, PB3, PB4,
-                 PB5)) {
+  while (!mag.begin_SPI(PA2, PA5, PA6,
+                 PA7)) {
     Serial.println("Could not find sensor. Check wiring.");
     delay(10);
   }
@@ -97,6 +100,15 @@ void setup() {
 }
 
 void loop() {
+  int toggle_delay = 1000;
+
+  uint32_t current_time = millis();
+  if (current_time - last_led_toggle > toggle_delay) {
+    last_led_toggle = millis();
+    digitalWrite(PA9, !digitalRead(PA9));
+  }
+
+  Serial.println("Hello World!");
 
   sensors_event_t accel;
   sensors_event_t gyro;
@@ -108,55 +120,66 @@ void loop() {
 
   baro.init();
   baro.getSensorData(&sensorData, true);
-  mag.begin_SPI(PA3);
+  mag.begin_SPI(SENSOR_LIS_CS);
   mag.readMagneticField(magx, magy, magz);
-  sox.begin_SPI(PA0);
-  sox.getEvent(&accel, &gyro, &temp);
+  // sox.begin_SPI(SENSOR_LSM_CS);
+  // sox.getEvent(&accel, &gyro, &temp);
 
+  float baro_tmp = sensorData.temperature;
+  Serial.print("BMP390 TEMP: "); Serial.print(baro_tmp); Serial.println(" C\n");
 
   Serial.print("BMP390 DATA:\r\n");
   Serial.print("Pressure: "); Serial.print(sensorData.pressure); Serial.print(" Pa\t");
   Serial.print("Altitude: "); Serial.print(sensorData.altitude); Serial.print(" m\t");
   Serial.print("Temperature: "); Serial.print(sensorData.temperature); Serial.println(" C\n");
 
-  Serial.print("LSM6DSOX DATA:\r\n");
-  Serial.print("X: "); Serial.print(accel.acceleration.x); Serial.print(" m/s^2\t");
-  Serial.print("Y: "); Serial.print(accel.acceleration.y); Serial.print(" m/s^2\t");
-  Serial.print("Z: "); Serial.print(accel.acceleration.z); Serial.println(" m/s^2");
-  Serial.print("X: "); Serial.print(gyro.gyro.x); Serial.print(" d/s\t");
-  Serial.print("Y: "); Serial.print(gyro.gyro.y); Serial.print(" d/s\t");
-  Serial.print("Z: "); Serial.print(gyro.gyro.z); Serial.println(" d/s\n");
+  // float acl_x = accel.acceleration.x;
+  // Serial.print("ACL X: "); Serial.print(acl_x); Serial.print(" m/s^2\t");
 
-  Serial.print("LIS3MDL DATA:\r\n");
-  Serial.print("X: "); Serial.print(magx); Serial.print(" µT\t");
-  Serial.print("Y: "); Serial.print(magy); Serial.print(" µT\t");
-  Serial.print("Z: "); Serial.print(magz); Serial.println(" µT\n");
+  float gyro_x = gyro.gyro.x;
+  Serial.print("GYRO X: "); Serial.print(gyro_x); Serial.print(" d/s\t");
 
-  const uint32_t testAddress = 0x00;
-  const int testLength = 255; 
-  uint8_t testData[testLength]; 
-  uint8_t readBuffer[testLength]; 
-  for (int i = 0; i < testLength; i++) {
-    testData[i] = 0xAE; 
-  }
+  float mag_x = magx;
+  Serial.print("MAG X: "); Serial.print(mag_x); Serial.println(" µT\n");
+  
+  // Serial.print("LSM6DSOX DATA:\r\n");
+  // Serial.print("X: "); Serial.print(accel.acceleration.x); Serial.print(" m/s^2\t");
+  // Serial.print("Y: "); Serial.print(accel.acceleration.y); Serial.print(" m/s^2\t");
+  // Serial.print("Z: "); Serial.print(accel.acceleration.z); Serial.println(" m/s^2");
+  // Serial.print("X: "); Serial.print(gyro.gyro.x); Serial.print(" d/s\t");
+  // Serial.print("Y: "); Serial.print(gyro.gyro.y); Serial.print(" d/s\t");
+  // Serial.print("Z: "); Serial.print(gyro.gyro.z); Serial.println(" d/s\n");
 
-  flash.eraseSector(testAddress);
-  FlashStatus writeStatus = flash.writeFlash(testAddress, testData, testLength);
-  FlashStatus readStatus = flash.readFlash(testAddress, readBuffer, testLength);
+  // Serial.print("LIS3MDL DATA:\r\n");
+  // Serial.print("X: "); Serial.print(magx); Serial.print(" µT\t");
+  // Serial.print("Y: "); Serial.print(magy); Serial.print(" µT\t");
+  // Serial.print("Z: "); Serial.print(magz); Serial.println(" µT\n");
 
-  bool dataMatches = true;
-  for (size_t i = 0; i < testLength; i++) {
-    if (testData[i] != readBuffer[i]) {
-      dataMatches = false;
-      break;
-    }
-  }
+  // const uint32_t testAddress = 0x00;
+  // const int testLength = 255; 
+  // uint8_t testData[testLength]; 
+  // uint8_t readBuffer[testLength]; 
+  // for (int i = 0; i < testLength; i++) {
+  //   testData[i] = 0xAE; 
+  // }
 
-  if (dataMatches) {
-    Serial.println("Flash data verification successful: Data matches!\n");
-  } else {
-    Serial.println("Flash data verification failed: Data does not match.\n");
-  }
+  // flash.eraseSector(testAddress);
+  // FlashStatus writeStatus = flash.writeFlash(testAddress, testData, testLength);
+  // FlashStatus readStatus = flash.readFlash(testAddress, readBuffer, testLength);
+
+  // bool dataMatches = true;
+  // for (size_t i = 0; i < testLength; i++) {
+  //   if (testData[i] != readBuffer[i]) {
+  //     dataMatches = false;
+  //     break;
+  //   }
+  // }
+
+  // if (dataMatches) {
+  //   Serial.println("Flash data verification successful: Data matches!\n");
+  // } else {
+  //   Serial.println("Flash data verification failed: Data does not match.\n");
+  // }
 
 
   delay(1000);
