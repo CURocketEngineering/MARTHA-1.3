@@ -3,13 +3,15 @@
 #include "Adafruit_LSM6DSOX.h"
 #include "Adafruit_LIS3MDL.h"
 #include "FlashDriver.h"
-#include "bmp_spi.h"
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BMP3XX.h>
 #include "pins.h"
 
 #include "data_handling/SensorDataHandler.h"
 #include "data_handling/DataSaverSPI.h"
 #include "data_handling/DataNames.h"
 
+#define SEALEVELPRESSURE_HPA (1013.25)
 
 
 int last_led_toggle = 0;
@@ -17,7 +19,7 @@ int last_led_toggle = 0;
 Adafruit_LSM6DSOX sox;
 Adafruit_LIS3MDL  mag;
 FlashDriver       flash;
-BMP3_SPI          baro(PA1, PB5, PB4, PB3);
+Adafruit_BMP3XX   bmp;
 
 void setup() {
 
@@ -69,8 +71,8 @@ void setup() {
 
   // Setup for the magnetometer
   Serial.println("Setting up magnetometer...");
-  while (!mag.begin_SPI(PA2, PA5, PA6,
-                 PA7)) {
+  while (!mag.begin_SPI(SENSOR_LIS_CS, SENSOR_SCK, SENSOR_MISO,
+                 SENSOR_MOSI)) {
     Serial.println("Could not find sensor. Check wiring.");
     delay(10);
   }
@@ -89,14 +91,16 @@ void setup() {
     Serial.println("Failed to set Mag data rate");
   }
 
-    // Setup for the magnetometer
-  Serial.println("Setting up barometer...");
-  if(!baro.init()) {
-    // May need to change chip id in driver (0x50 -> 0x60)
-    Serial.println("Could not find sensor. Check wiring.");
-    delay(10);
+  if (! bmp.begin_SPI(SENSOR_BARO_CS, SENSOR_SCK, SENSOR_MISO, SENSOR_MOSI)) {  // software SPI mode
+    Serial.println("Could not find a valid BMP3 sensor, check wiring!");
+    while (1);
   }
 
+  // Set up oversampling and filter initialization
+  bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
+  bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
+  bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
+  bmp.setOutputDataRate(BMP3_ODR_50_HZ);
 }
 
 void loop() {
@@ -108,39 +112,45 @@ void loop() {
     digitalWrite(PA9, !digitalRead(PA9));
   }
 
-  Serial.println("Hello World!");
-
   sensors_event_t accel;
   sensors_event_t gyro;
   sensors_event_t temp;
   float magx;
   float magy;
   float magz;
-  bmp_data sensorData;
 
-  baro.init();
-  baro.getSensorData(&sensorData, true);
-  mag.begin_SPI(SENSOR_LIS_CS);
-  mag.readMagneticField(magx, magy, magz);
+  sensors_event_t mag_event; 
+  mag.getEvent(&mag_event);
+  Serial.print("MAG X: "); Serial.print(mag_event.magnetic.x); Serial.print(" µT\t");
+  Serial.print("MAG Y: "); Serial.print(mag_event.magnetic.y); Serial.print(" µT\t");
+  Serial.print("MAG Z: "); Serial.print(mag_event.magnetic.z); Serial.println(" µT\n");
+  
+
+  
   // sox.begin_SPI(SENSOR_LSM_CS);
   // sox.getEvent(&accel, &gyro, &temp);
 
-  float baro_tmp = sensorData.temperature;
-  Serial.print("BMP390 TEMP: "); Serial.print(baro_tmp); Serial.println(" C\n");
+  if (! bmp.performReading()) {
+    Serial.println("Failed to perform reading :(");
+    return;
+  }
+  Serial.print("Temperature = ");
+  Serial.print(bmp.temperature);
+  Serial.println(" *C");
 
-  Serial.print("BMP390 DATA:\r\n");
-  Serial.print("Pressure: "); Serial.print(sensorData.pressure); Serial.print(" Pa\t");
-  Serial.print("Altitude: "); Serial.print(sensorData.altitude); Serial.print(" m\t");
-  Serial.print("Temperature: "); Serial.print(sensorData.temperature); Serial.println(" C\n");
+  Serial.print("Pressure = ");
+  Serial.print(bmp.pressure / 100.0);
+  Serial.println(" hPa");
+
+  Serial.print("Approx. Altitude = ");
+  float alt = bmp.readAltitude(SEALEVELPRESSURE_HPA);
+  Serial.print(alt);
+  Serial.println(" m");
+
+  Serial.println();
 
   // float acl_x = accel.acceleration.x;
   // Serial.print("ACL X: "); Serial.print(acl_x); Serial.print(" m/s^2\t");
-
-  float gyro_x = gyro.gyro.x;
-  Serial.print("GYRO X: "); Serial.print(gyro_x); Serial.print(" d/s\t");
-
-  float mag_x = magx;
-  Serial.print("MAG X: "); Serial.print(mag_x); Serial.println(" µT\n");
   
   // Serial.print("LSM6DSOX DATA:\r\n");
   // Serial.print("X: "); Serial.print(accel.acceleration.x); Serial.print(" m/s^2\t");
