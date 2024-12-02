@@ -17,6 +17,13 @@
 
 #ifdef BB_MARTHA
 
+#define SENSOR_MISO PB4 
+#define SENSOR_MOSI PB5
+#define SENSOR_SCK PB3
+#define SENSOR_BARO_CS PA1
+#define SENSOR_LSM_CS PA0
+#define SENSOR_LIS_CS PA3
+
 #endif // BB_MARTHA pins 
  
 
