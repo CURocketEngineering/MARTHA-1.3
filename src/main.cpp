@@ -3,42 +3,65 @@
 #include "Adafruit_LSM6DSOX.h"
 #include "Adafruit_LIS3MDL.h"
 #include "FlashDriver.h"
-#include "bmp_spi.h"
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BMP3XX.h>
+#include "pins.h"
 
 #include "data_handling/SensorDataHandler.h"
 #include "data_handling/DataSaverSPI.h"
 #include "data_handling/DataNames.h"
 
+#define SEALEVELPRESSURE_HPA (1013.25)
 
 
-
+int last_led_toggle = 0;
 
 Adafruit_LSM6DSOX sox;
 Adafruit_LIS3MDL  mag;
 FlashDriver       flash;
-BMP3_SPI          baro(PA1, PB5, PB4, PB3);
+Adafruit_BMP3XX   bmp;
+
+DataSaverSPI dataSaver(100, SENSOR_MOSI, SENSOR_MISO, SENSOR_SCK, FLASH_CS);
+
+SensorDataHandler xAclData(ACCELEROMETER_X, &dataSaver);
+SensorDataHandler yAclData(ACCELEROMETER_Y, &dataSaver);
+SensorDataHandler zAclData(ACCELEROMETER_Z, &dataSaver);
+
+SensorDataHandler xGyroData(GYROSCOPE_X, &dataSaver);
+SensorDataHandler yGyroData(GYROSCOPE_Y, &dataSaver);
+SensorDataHandler zGyroData(GYROSCOPE_Z, &dataSaver);
+
+SensorDataHandler tempData(TEMPERATURE, &dataSaver);
+SensorDataHandler pressureData(PRESSURE, &dataSaver);
+SensorDataHandler altitudeData(ALTITUDE, &dataSaver);
+
+SensorDataHandler xMagData(MAGNETOMETER_X, &dataSaver);
+SensorDataHandler yMagData(MAGNETOMETER_Y, &dataSaver);
+SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 void setup() {
+
+  pinMode(PA9, OUTPUT); //LED 
 
 
   // put your setup code here, to run once:
   Serial.begin(115200);
 
-  pinMode(PA4, OUTPUT); //FLASH
+  // pinMode(PA4, OUTPUT); //FLASH
 
   FlashStatus resultFlash = flash.initFlash();
   if(resultFlash == FLASH_SUCCESS){
     Serial.println("Flash Initialized!");
   }else{
-    Serial.println("FLASH Wasn't Initalized!");
+    Serial.println("Flash Wasn't Initalized!");
   }
 
 
 
   Serial.println("Setting up accelerometer and gyroscope...");
-  while (!sox.begin_SPI(PA0, PB3, PB4,
-                 PB5)){
-    Serial.println("Could not find sensor. Check wiring.");
+  while (!sox.begin_SPI(SENSOR_LSM_CS, SENSOR_SCK , SENSOR_MISO,
+                 SENSOR_MOSI)){
+    Serial.println("Could not find LSM6DSOX. Check wiring.");
     delay(10);
   }
 
@@ -66,8 +89,8 @@ void setup() {
 
   // Setup for the magnetometer
   Serial.println("Setting up magnetometer...");
-  while (!mag.begin_SPI(PA3, PB3, PB4,
-                 PB5)) {
+  while (!mag.begin_SPI(SENSOR_LIS_CS, SENSOR_SCK, SENSOR_MISO,
+                 SENSOR_MOSI)) {
     Serial.println("Could not find sensor. Check wiring.");
     delay(10);
   }
@@ -86,77 +109,83 @@ void setup() {
     Serial.println("Failed to set Mag data rate");
   }
 
-    // Setup for the magnetometer
-  Serial.println("Setting up barometer...");
-  if(!baro.init()) {
-    // May need to change chip id in driver (0x50 -> 0x60)
-    Serial.println("Could not find sensor. Check wiring.");
-    delay(10);
+  if (! bmp.begin_SPI(SENSOR_BARO_CS, SENSOR_SCK, SENSOR_MISO, SENSOR_MOSI)) {  // software SPI mode
+    Serial.println("Could not find a valid BMP3 sensor, check wiring!");
+    while (1);
   }
 
+  // Set up oversampling and filter initialization
+  bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
+  bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
+  bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
+  bmp.setOutputDataRate(BMP3_ODR_50_HZ);
 }
 
 void loop() {
+  int toggle_delay = 1000;
+
+  uint32_t current_time = millis();
+  if (current_time - last_led_toggle > toggle_delay) {
+    last_led_toggle = millis();
+    digitalWrite(PA9, !digitalRead(PA9));
+  }
 
   sensors_event_t accel;
   sensors_event_t gyro;
   sensors_event_t temp;
-  float magx;
-  float magy;
-  float magz;
-  bmp_data sensorData;
+  sensors_event_t mag_event; 
 
-  baro.init();
-  baro.getSensorData(&sensorData, true);
-  mag.begin_SPI(PA3);
-  mag.readMagneticField(magx, magy, magz);
-  sox.begin_SPI(PA0);
+  mag.getEvent(&mag_event);
+
+  xMagData.addData(DataPoint(mag_event.magnetic.x, millis()));
+  yMagData.addData(DataPoint(mag_event.magnetic.y, millis()));
+  zMagData.addData(DataPoint(mag_event.magnetic.z, millis()));
+
   sox.getEvent(&accel, &gyro, &temp);
 
+  xAclData.addData(DataPoint(accel.acceleration.x, millis()));
+  yAclData.addData(DataPoint(accel.acceleration.y, millis()));
+  zAclData.addData(DataPoint(accel.acceleration.z, millis()));
 
-  Serial.print("BMP390 DATA:\r\n");
-  Serial.print("Pressure: "); Serial.print(sensorData.pressure); Serial.print(" Pa\t");
-  Serial.print("Altitude: "); Serial.print(sensorData.altitude); Serial.print(" m\t");
-  Serial.print("Temperature: "); Serial.print(sensorData.temperature); Serial.println(" C\n");
+  xGyroData.addData(DataPoint(gyro.gyro.x, millis()));
+  yGyroData.addData(DataPoint(gyro.gyro.y, millis()));
+  zGyroData.addData(DataPoint(gyro.gyro.z, millis()));
 
-  Serial.print("LSM6DSOX DATA:\r\n");
-  Serial.print("X: "); Serial.print(accel.acceleration.x); Serial.print(" m/s^2\t");
-  Serial.print("Y: "); Serial.print(accel.acceleration.y); Serial.print(" m/s^2\t");
-  Serial.print("Z: "); Serial.print(accel.acceleration.z); Serial.println(" m/s^2");
-  Serial.print("X: "); Serial.print(gyro.gyro.x); Serial.print(" d/s\t");
-  Serial.print("Y: "); Serial.print(gyro.gyro.y); Serial.print(" d/s\t");
-  Serial.print("Z: "); Serial.print(gyro.gyro.z); Serial.println(" d/s\n");
+  tempData.addData(DataPoint(temp.temperature, millis()));
 
-  Serial.print("LIS3MDL DATA:\r\n");
-  Serial.print("X: "); Serial.print(magx); Serial.print(" µT\t");
-  Serial.print("Y: "); Serial.print(magy); Serial.print(" µT\t");
-  Serial.print("Z: "); Serial.print(magz); Serial.println(" µT\n");
-
-  const uint32_t testAddress = 0x00;
-  const int testLength = 255; 
-  uint8_t testData[testLength]; 
-  uint8_t readBuffer[testLength]; 
-  for (int i = 0; i < testLength; i++) {
-    testData[i] = 0xAE; 
+  if (! bmp.performReading()) {
+    Serial.println("Failed to perform reading :(");
+    return;
   }
 
-  flash.eraseSector(testAddress);
-  FlashStatus writeStatus = flash.writeFlash(testAddress, testData, testLength);
-  FlashStatus readStatus = flash.readFlash(testAddress, readBuffer, testLength);
+  altitudeData.addData(DataPoint(bmp.readAltitude(SEALEVELPRESSURE_HPA), millis()));
+  pressureData.addData(DataPoint(bmp.pressure, millis()));
 
-  bool dataMatches = true;
-  for (size_t i = 0; i < testLength; i++) {
-    if (testData[i] != readBuffer[i]) {
-      dataMatches = false;
-      break;
-    }
-  }
+  // const uint32_t testAddress = 0x00;
+  // const int testLength = 255; 
+  // uint8_t testData[testLength]; 
+  // uint8_t readBuffer[testLength]; 
+  // for (int i = 0; i < testLength; i++) {
+  //   testData[i] = 0xAE; 
+  // }
 
-  if (dataMatches) {
-    Serial.println("Flash data verification successful: Data matches!\n");
-  } else {
-    Serial.println("Flash data verification failed: Data does not match.\n");
-  }
+  // flash.eraseSector(testAddress);
+  // FlashStatus writeStatus = flash.writeFlash(testAddress, testData, testLength);
+  // FlashStatus readStatus = flash.readFlash(testAddress, readBuffer, testLength);
+
+  // bool dataMatches = true;
+  // for (size_t i = 0; i < testLength; i++) {
+  //   if (testData[i] != readBuffer[i]) {
+  //     dataMatches = false;
+  //     break;
+  //   }
+  // }
+
+  // if (dataMatches) {
+  //   Serial.println("Flash data verification successful: Data matches!\n");
+  // } else {
+  //   Serial.println("Flash data verification failed: Data does not match.\n");
+  // }
 
 
   delay(1000);
