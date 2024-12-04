@@ -21,6 +21,24 @@ Adafruit_LIS3MDL  mag;
 FlashDriver       flash;
 Adafruit_BMP3XX   bmp;
 
+DataSaverSPI dataSaver(100, SENSOR_MOSI, SENSOR_MISO, SENSOR_SCK, FLASH_CS);
+
+SensorDataHandler xAclData(ACCELEROMETER_X, &dataSaver);
+SensorDataHandler yAclData(ACCELEROMETER_Y, &dataSaver);
+SensorDataHandler zAclData(ACCELEROMETER_Z, &dataSaver);
+
+SensorDataHandler xGyroData(GYROSCOPE_X, &dataSaver);
+SensorDataHandler yGyroData(GYROSCOPE_Y, &dataSaver);
+SensorDataHandler zGyroData(GYROSCOPE_Z, &dataSaver);
+
+SensorDataHandler tempData(TEMPERATURE, &dataSaver);
+SensorDataHandler pressureData(PRESSURE, &dataSaver);
+SensorDataHandler altitudeData(ALTITUDE, &dataSaver);
+
+SensorDataHandler xMagData(MAGNETOMETER_X, &dataSaver);
+SensorDataHandler yMagData(MAGNETOMETER_Y, &dataSaver);
+SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
+
 void setup() {
 
   pinMode(PA9, OUTPUT); //LED 
@@ -35,7 +53,7 @@ void setup() {
   if(resultFlash == FLASH_SUCCESS){
     Serial.println("Flash Initialized!");
   }else{
-    Serial.println("FLASH Wasn't Initalized!");
+    Serial.println("Flash Wasn't Initalized!");
   }
 
 
@@ -43,7 +61,7 @@ void setup() {
   Serial.println("Setting up accelerometer and gyroscope...");
   while (!sox.begin_SPI(SENSOR_LSM_CS, SENSOR_SCK , SENSOR_MISO,
                  SENSOR_MOSI)){
-    Serial.println("Could not find sensor. Check wiring.");
+    Serial.println("Could not find LSM6DSOX. Check wiring.");
     delay(10);
   }
 
@@ -115,55 +133,33 @@ void loop() {
   sensors_event_t accel;
   sensors_event_t gyro;
   sensors_event_t temp;
-  float magx;
-  float magy;
-  float magz;
-
   sensors_event_t mag_event; 
-  mag.getEvent(&mag_event);
-  Serial.print("MAG X: "); Serial.print(mag_event.magnetic.x); Serial.print(" µT\t");
-  Serial.print("MAG Y: "); Serial.print(mag_event.magnetic.y); Serial.print(" µT\t");
-  Serial.print("MAG Z: "); Serial.print(mag_event.magnetic.z); Serial.println(" µT\n");
-  
 
-  
-  // sox.begin_SPI(SENSOR_LSM_CS);
-  // sox.getEvent(&accel, &gyro, &temp);
+  mag.getEvent(&mag_event);
+
+  xMagData.addData(DataPoint(mag_event.magnetic.x, millis()));
+  yMagData.addData(DataPoint(mag_event.magnetic.y, millis()));
+  zMagData.addData(DataPoint(mag_event.magnetic.z, millis()));
+
+  sox.getEvent(&accel, &gyro, &temp);
+
+  xAclData.addData(DataPoint(accel.acceleration.x, millis()));
+  yAclData.addData(DataPoint(accel.acceleration.y, millis()));
+  zAclData.addData(DataPoint(accel.acceleration.z, millis()));
+
+  xGyroData.addData(DataPoint(gyro.gyro.x, millis()));
+  yGyroData.addData(DataPoint(gyro.gyro.y, millis()));
+  zGyroData.addData(DataPoint(gyro.gyro.z, millis()));
+
+  tempData.addData(DataPoint(temp.temperature, millis()));
 
   if (! bmp.performReading()) {
     Serial.println("Failed to perform reading :(");
     return;
   }
-  Serial.print("Temperature = ");
-  Serial.print(bmp.temperature);
-  Serial.println(" *C");
 
-  Serial.print("Pressure = ");
-  Serial.print(bmp.pressure / 100.0);
-  Serial.println(" hPa");
-
-  Serial.print("Approx. Altitude = ");
-  float alt = bmp.readAltitude(SEALEVELPRESSURE_HPA);
-  Serial.print(alt);
-  Serial.println(" m");
-
-  Serial.println();
-
-  // float acl_x = accel.acceleration.x;
-  // Serial.print("ACL X: "); Serial.print(acl_x); Serial.print(" m/s^2\t");
-  
-  // Serial.print("LSM6DSOX DATA:\r\n");
-  // Serial.print("X: "); Serial.print(accel.acceleration.x); Serial.print(" m/s^2\t");
-  // Serial.print("Y: "); Serial.print(accel.acceleration.y); Serial.print(" m/s^2\t");
-  // Serial.print("Z: "); Serial.print(accel.acceleration.z); Serial.println(" m/s^2");
-  // Serial.print("X: "); Serial.print(gyro.gyro.x); Serial.print(" d/s\t");
-  // Serial.print("Y: "); Serial.print(gyro.gyro.y); Serial.print(" d/s\t");
-  // Serial.print("Z: "); Serial.print(gyro.gyro.z); Serial.println(" d/s\n");
-
-  // Serial.print("LIS3MDL DATA:\r\n");
-  // Serial.print("X: "); Serial.print(magx); Serial.print(" µT\t");
-  // Serial.print("Y: "); Serial.print(magy); Serial.print(" µT\t");
-  // Serial.print("Z: "); Serial.print(magz); Serial.println(" µT\n");
+  altitudeData.addData(DataPoint(bmp.readAltitude(SEALEVELPRESSURE_HPA), millis()));
+  pressureData.addData(DataPoint(bmp.pressure, millis()));
 
   // const uint32_t testAddress = 0x00;
   // const int testLength = 255; 
