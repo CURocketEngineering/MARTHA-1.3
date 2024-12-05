@@ -96,22 +96,22 @@ void setup() {
   }
   mag.setDataRate(LIS3MDL_DATARATE_155_HZ);
   mag.setRange(LIS3MDL_RANGE_4_GAUSS);
-  mag.setOperationMode(LIS3MDL_SINGLEMODE);
+  mag.setOperationMode(LIS3MDL_CONTINUOUSMODE);
   mag.setPerformanceMode(LIS3MDL_MEDIUMMODE);
 
-  mag.setIntThreshold(500);
-  mag.configInterrupt(false, false, true, // enable z axis
-                          true, // polarity
-                          false, // don't latch
-                          true); // enabled!
+  // mag.setIntThreshold(500);
+  // mag.configInterrupt(false, false, true, // enable z axis
+  //                         true, // polarity
+  //                         false, // don't latch
+  //                         true); // enabled!
 
   if (mag.getDataRate() != LIS3MDL_DATARATE_155_HZ) {
     Serial.println("Failed to set Mag data rate");
   }
 
-  if (! bmp.begin_SPI(SENSOR_BARO_CS, SENSOR_SCK, SENSOR_MISO, SENSOR_MOSI)) {  // software SPI mode
+  while (! bmp.begin_SPI(SENSOR_BARO_CS, SENSOR_SCK, SENSOR_MISO, SENSOR_MOSI)) {  // software SPI mode
     Serial.println("Could not find a valid BMP3 sensor, check wiring!");
-    while (1);
+    delay(10);
   }
 
   // Set up oversampling and filter initialization
@@ -130,6 +130,8 @@ void loop() {
     digitalWrite(PA9, !digitalRead(PA9));
   }
 
+  Serial.write("Reading sensors...\n");
+
   sensors_event_t accel;
   sensors_event_t gyro;
   sensors_event_t temp;
@@ -142,6 +144,17 @@ void loop() {
   zMagData.addData(DataPoint(mag_event.magnetic.z, millis()));
 
   sox.getEvent(&accel, &gyro, &temp);
+
+  Serial.write("ACL X: ");
+  Serial.println(accel.acceleration.x);
+  Serial.write("GYRO X: ");
+  Serial.println(gyro.gyro.x);
+  Serial.write("TEMP: ");
+  Serial.println(temp.temperature);
+  Serial.write("MAG X: ");
+  Serial.println(mag_event.magnetic.x);
+  Serial.write("Altitude: ");
+  Serial.println(bmp.readAltitude(SEALEVELPRESSURE_HPA));
 
   xAclData.addData(DataPoint(accel.acceleration.x, millis()));
   yAclData.addData(DataPoint(accel.acceleration.y, millis()));
