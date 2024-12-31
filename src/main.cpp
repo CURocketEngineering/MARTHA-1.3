@@ -18,7 +18,7 @@ int last_led_toggle = 0;
 
 Adafruit_LSM6DSOX sox;
 Adafruit_LIS3MDL  mag;
-FlashDriver       flash;
+FlashDriver       flash(SENSOR_MOSI, SENSOR_MISO, SENSOR_SCK, FLASH_CS);
 Adafruit_BMP3XX   bmp;
 
 DataSaverSPI dataSaver(100, SENSOR_MOSI, SENSOR_MISO, SENSOR_SCK, FLASH_CS);
@@ -41,18 +41,18 @@ SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 void setup() {
 
-  pinMode(PA9, OUTPUT); //LED 
+  pinMode(PA9, OUTPUT); // LED 
 
 
   // put your setup code here, to run once:
   Serial.begin(115200);
 
-  // pinMode(PA4, OUTPUT); //FLASH
+  pinMode(PA4, OUTPUT); // FLASH
 
   FlashStatus resultFlash = flash.initFlash();
   if(resultFlash == FLASH_SUCCESS){
     Serial.println("Flash Initialized!");
-  }else{
+  } else{
     Serial.println("Flash Wasn't Initalized!");
   }
 
@@ -161,6 +161,8 @@ void loop() {
   altitudeData.addData(DataPoint(bmp.readAltitude(SEALEVELPRESSURE_HPA), millis()));
   pressureData.addData(DataPoint(bmp.pressure, millis()));
 
+  // Serial.println("Alive");
+
   // const uint32_t testAddress = 0x00;
   // const int testLength = 255; 
   // uint8_t testData[testLength]; 
@@ -186,9 +188,6 @@ void loop() {
   // } else {
   //   Serial.println("Flash data verification failed: Data does not match.\n");
   // }
-
-
-  delay(1000);
 
 }
 
