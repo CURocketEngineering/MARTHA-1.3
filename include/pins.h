@@ -12,6 +12,7 @@
 #define SENSOR_LSM_CS PB0 
 #define SENSOR_LIS_CS PA2
 #define FLASH_CS PB1
+#define DEBUG_LED PA9
 
 #endif // PCB_MARTHA
 
@@ -25,6 +26,7 @@
 #define SENSOR_LSM_CS PA0
 #define SENSOR_LIS_CS PA3
 #define FLASH_CS PB1
+#define DEBUG_LED PA9
 
 #endif // BB_MARTHA pins 
  

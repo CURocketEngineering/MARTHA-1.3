@@ -18,7 +18,6 @@ int last_led_toggle = 0;
 
 Adafruit_LSM6DSOX sox;
 Adafruit_LIS3MDL  mag;
-FlashDriver       flash(SENSOR_MOSI, SENSOR_MISO, SENSOR_SCK, FLASH_CS);
 Adafruit_BMP3XX   bmp;
 
 DataSaverSPI dataSaver(100, SENSOR_MOSI, SENSOR_MISO, SENSOR_SCK, FLASH_CS);
@@ -41,21 +40,11 @@ SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 void setup() {
 
-  pinMode(PA9, OUTPUT); // LED 
+  pinMode(DEBUG_LED, OUTPUT); // LED 
 
 
   // put your setup code here, to run once:
   Serial.begin(115200);
-
-  pinMode(PA4, OUTPUT); // FLASH
-
-  FlashStatus resultFlash = flash.initFlash();
-  if(resultFlash == FLASH_SUCCESS){
-    Serial.println("Flash Initialized!");
-  } else{
-    Serial.println("Flash Wasn't Initalized!");
-  }
-
 
 
   Serial.println("Setting up accelerometer and gyroscope...");
@@ -127,7 +116,7 @@ void loop() {
   uint32_t current_time = millis();
   if (current_time - last_led_toggle > toggle_delay) {
     last_led_toggle = millis();
-    digitalWrite(PA9, !digitalRead(PA9));
+    digitalWrite(DEBUG_LED, !digitalRead(DEBUG_LED));
   }
 
   sensors_event_t accel;
@@ -160,34 +149,6 @@ void loop() {
 
   altitudeData.addData(DataPoint(bmp.readAltitude(SEALEVELPRESSURE_HPA), millis()));
   pressureData.addData(DataPoint(bmp.pressure, millis()));
-
-  // Serial.println("Alive");
-
-  // const uint32_t testAddress = 0x00;
-  // const int testLength = 255; 
-  // uint8_t testData[testLength]; 
-  // uint8_t readBuffer[testLength]; 
-  // for (int i = 0; i < testLength; i++) {
-  //   testData[i] = 0xAE; 
-  // }
-
-  // flash.eraseSector(testAddress);
-  // FlashStatus writeStatus = flash.writeFlash(testAddress, testData, testLength);
-  // FlashStatus readStatus = flash.readFlash(testAddress, readBuffer, testLength);
-
-  // bool dataMatches = true;
-  // for (size_t i = 0; i < testLength; i++) {
-  //   if (testData[i] != readBuffer[i]) {
-  //     dataMatches = false;
-  //     break;
-  //   }
-  // }
-
-  // if (dataMatches) {
-  //   Serial.println("Flash data verification successful: Data matches!\n");
-  // } else {
-  //   Serial.println("Flash data verification failed: Data does not match.\n");
-  // }
 
 }
 
