@@ -29,6 +29,10 @@ git submodule update
 4. Install the PlatformIO VScode extension: `platformio.platformio-ide`
 5. Install the [Cube Programmer](https://www.st.com/en/development-tools/stm32cubeprog.html#get-software) and run it to get all the stm32 drivers you'll need. 
 
+### Unity Testing Setup
+1. Run the test within the pio terminal with `pio test -e martha_stm --without-testing` this will flash the test script onto the board.
+2. Open the serial monitor and see the results of the test. (Make sure your test waits for serial to start before running)
+
 ## Firmware Update
 1. Connect ST-Link: [helpful guide](https://stm32-base.org/guides/connecting-your-debugger.html)
 2. Connect MARTHA's USB to your laptop for serial messages
