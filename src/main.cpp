@@ -43,8 +43,8 @@ void setup() {
   pinMode(DEBUG_LED, OUTPUT); // LED 
 
 
-  // put your setup code here, to run once:
   Serial.begin(115200);
+  // while (!Serial) delay(10); // Wait for Serial Monitor (Comment out if not using)
 
 
   Serial.println("Setting up accelerometer and gyroscope...");
@@ -98,6 +98,8 @@ void setup() {
     Serial.println("Failed to set Mag data rate");
   }
 
+  Serial.println("Setting up barometer...");
+
   if (! bmp.begin_SPI(SENSOR_BARO_CS, SENSOR_SCK, SENSOR_MISO, SENSOR_MOSI)) {  // software SPI mode
     Serial.println("Could not find a valid BMP3 sensor, check wiring!");
     while (1);
@@ -108,6 +110,15 @@ void setup() {
   bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
   bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
   bmp.setOutputDataRate(BMP3_ODR_50_HZ);
+
+  Serial.println("Setting up data saver...");
+
+  // Initalize data saver
+  if (!dataSaver.begin()) {
+    Serial.println("Failed to initialize data saver");
+  }
+
+  Serial.println("Setup complete!");
 }
 
 void loop() {
