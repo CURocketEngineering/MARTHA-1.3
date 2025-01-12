@@ -2,11 +2,21 @@
 #include <Adafruit_LSM6DSOX.h>
 #include "pins.h"
 
+#include <SPI.h>
+#include <SdFat.h>
+
+#include <Adafruit_SPIFlash.h>
+
+// for flashTransport definition
+#include "flash_config.h"
+
+Adafruit_SPIFlash flash(&flashTransport);
+
 Adafruit_LSM6DSOX sox;
 
 // Function to initialize the LSM6DSOX sensor for testing
 void setupLSM6DSOX() {
-    if (!sox.begin_SPI(SENSOR_LSM_CS, SENSOR_SCK, SENSOR_MISO, SENSOR_MOSI)) {
+    if (!sox.begin_SPI(SENSOR_LSM_CS)) {
         TEST_FAIL_MESSAGE("Failed to initialize LSM6DSOX sensor. Check wiring!");
     }
 
@@ -21,6 +31,11 @@ void setupLSM6DSOX() {
     }
     if (sox.getGyroRange() != LSM6DS_GYRO_RANGE_2000_DPS) {
         TEST_FAIL_MESSAGE("Failed to set gyroscope range!");
+    }
+
+    // Initialize the flash memory to check for interference
+    if (!flash.begin()) {
+        TEST_FAIL_MESSAGE("Failed to initialize flash memory!");
     }
 }
 

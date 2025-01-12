@@ -6,7 +6,7 @@ Adafruit_LIS3MDL mag;
 
 // Function to initialize the LIS3MDL sensor for testing
 void setupLIS3MDL() {
-    if (!mag.begin_SPI(SENSOR_LIS_CS, SENSOR_SCK, SENSOR_MISO, SENSOR_MOSI)) {
+    if (!mag.begin_SPI(SENSOR_LIS_CS)) {
         TEST_FAIL_MESSAGE("Failed to initialize LIS3MDL sensor. Check wiring!");
     }
 

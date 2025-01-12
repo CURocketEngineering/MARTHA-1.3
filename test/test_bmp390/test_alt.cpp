@@ -8,7 +8,7 @@ Adafruit_BMP3XX bmp;
 
 // Function to initialize the altimeter for testing
 void setupAltimeter() {
-    if (!bmp.begin_SPI(SENSOR_BARO_CS, SENSOR_SCK, SENSOR_MISO, SENSOR_MOSI)) {
+    if (!bmp.begin_SPI(SENSOR_BARO_CS)) {
         TEST_FAIL_MESSAGE("Failed to initialize BMP3 sensor. Check wiring!");
     }
     bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);

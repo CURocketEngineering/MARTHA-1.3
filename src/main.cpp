@@ -10,17 +10,22 @@
 #include "data_handling/SensorDataHandler.h"
 #include "data_handling/DataSaverSPI.h"
 #include "data_handling/DataNames.h"
+#include "flash_config.h"
+#include "data_handling/LaunchPredictor.h"
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 
 
 int last_led_toggle = 0;
+int led_toggle_delay = 1000;
+float loop_count = 0;
 
 Adafruit_LSM6DSOX sox;
 Adafruit_LIS3MDL  mag;
 Adafruit_BMP3XX   bmp;
 
-DataSaverSPI dataSaver(100, SENSOR_MOSI, SENSOR_MISO, SENSOR_SCK, FLASH_CS);
+Adafruit_SPIFlash flash(&flashTransport);
+DataSaverSPI dataSaver(10, &flash); // Save data every 10 ms
 
 SensorDataHandler xAclData(ACCELEROMETER_X, &dataSaver);
 SensorDataHandler yAclData(ACCELEROMETER_Y, &dataSaver);
@@ -38,18 +43,19 @@ SensorDataHandler xMagData(MAGNETOMETER_X, &dataSaver);
 SensorDataHandler yMagData(MAGNETOMETER_Y, &dataSaver);
 SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
+LaunchPredictor launchPredictor(30, 1000, 40);
+
 void setup() {
 
   pinMode(DEBUG_LED, OUTPUT); // LED 
 
 
   Serial.begin(115200);
-  // while (!Serial) delay(10); // Wait for Serial Monitor (Comment out if not using)
+  while (!Serial) delay(10); // Wait for Serial Monitor (Comment out if not using)
 
 
   Serial.println("Setting up accelerometer and gyroscope...");
-  while (!sox.begin_SPI(SENSOR_LSM_CS, SENSOR_SCK , SENSOR_MISO,
-                 SENSOR_MOSI)){
+  while (!sox.begin_SPI(SENSOR_LSM_CS)){
     Serial.println("Could not find LSM6DSOX. Check wiring.");
     delay(10);
   }
@@ -78,8 +84,7 @@ void setup() {
 
   // Setup for the magnetometer
   Serial.println("Setting up magnetometer...");
-  while (!mag.begin_SPI(SENSOR_LIS_CS, SENSOR_SCK, SENSOR_MISO,
-                 SENSOR_MOSI)) {
+  while (!mag.begin_SPI(SENSOR_LIS_CS)) {
     Serial.println("Could not find sensor. Check wiring.");
     delay(10);
   }
@@ -98,7 +103,7 @@ void setup() {
     Serial.println("Failed to set Mag data rate");
   }
 
-  while (! bmp.begin_SPI(SENSOR_BARO_CS, SENSOR_SCK, SENSOR_MISO, SENSOR_MOSI)) {  // software SPI mode
+  while (! bmp.begin_SPI(SENSOR_BARO_CS)) {  // software SPI mode
     Serial.println("Could not find a valid BMP3 sensor, check wiring!");
     delay(10);
   }
@@ -120,15 +125,16 @@ void setup() {
 }
 
 void loop() {
-  int toggle_delay = 1000;
+
+  loop_count += 1;
 
   uint32_t current_time = millis();
-  if (current_time - last_led_toggle > toggle_delay) {
+  if (current_time - last_led_toggle > led_toggle_delay) {
     last_led_toggle = millis();
     digitalWrite(DEBUG_LED, !digitalRead(DEBUG_LED));
   }
 
-  Serial.write("Reading sensors...\n");
+  // Serial.write("Reading sensors...\n");
 
   sensors_event_t accel;
   sensors_event_t gyro;
@@ -137,40 +143,61 @@ void loop() {
 
   mag.getEvent(&mag_event);
 
-  xMagData.addData(DataPoint(mag_event.magnetic.x, millis()));
-  yMagData.addData(DataPoint(mag_event.magnetic.y, millis()));
-  zMagData.addData(DataPoint(mag_event.magnetic.z, millis()));
+  xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
+  yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
+  zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
 
   sox.getEvent(&accel, &gyro, &temp);
 
-  Serial.write("ACL X: ");
-  Serial.println(accel.acceleration.x);
-  Serial.write("GYRO X: ");
-  Serial.println(gyro.gyro.x);
-  Serial.write("TEMP: ");
-  Serial.println(temp.temperature);
-  Serial.write("MAG X: ");
-  Serial.println(mag_event.magnetic.x);
-  Serial.write("Altitude: ");
-  Serial.println(bmp.readAltitude(SEALEVELPRESSURE_HPA));
+  // Serial.write("ACL X: ");
+  // Serial.println(accel.acceleration.x);
+  // Serial.write("GYRO X: ");
+  // Serial.println(gyro.gyro.x);
+  // Serial.write("TEMP: ");
+  // Serial.println(temp.temperature);
+  // Serial.write("MAG X: ");
+  // Serial.println(mag_event.magnetic.x);
+  // Serial.write("Altitude: ");
+  // Serial.println(bmp.readAltitude(SEALEVELPRESSURE_HPA));
 
-  xAclData.addData(DataPoint(accel.acceleration.x, millis()));
-  yAclData.addData(DataPoint(accel.acceleration.y, millis()));
-  zAclData.addData(DataPoint(accel.acceleration.z, millis()));
+  xAclData.addData(DataPoint(current_time, accel.acceleration.x));
+  yAclData.addData(DataPoint(current_time, accel.acceleration.y));
+  zAclData.addData(DataPoint(current_time, accel.acceleration.z));
 
-  xGyroData.addData(DataPoint(gyro.gyro.x, millis()));
-  yGyroData.addData(DataPoint(gyro.gyro.y, millis()));
-  zGyroData.addData(DataPoint(gyro.gyro.z, millis()));
+  launchPredictor.update(DataPoint(current_time, accel.acceleration.x),
+                         DataPoint(current_time, accel.acceleration.y),
+                         DataPoint(current_time, accel.acceleration.z));
 
-  tempData.addData(DataPoint(temp.temperature, millis()));
+  // Blink fast if in post launch mode (DO NOT LAUNCH)
+  if (dataSaver.quickGetPostLaunchMode()) {
+    led_toggle_delay = 100;
+  } else {
+    // If launch detected, put the dataSaver into post launch mode
+    // i.e. all the data written from this point on is sacred and will not be overwritten
+    if (launchPredictor.isLaunched()){
+      Serial.println("Launch detected!");
+      dataSaver.launchDetected(launchPredictor.getLaunchedTime());
+    }
+  }
+
+  // Serial.println(launchPredictor.getMedianAccelerationSquared());
+
+  xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
+  yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
+  zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
+
+  tempData.addData(DataPoint(current_time, temp.temperature));
 
   if (! bmp.performReading()) {
     Serial.println("Failed to perform reading :(");
     return;
   }
 
-  altitudeData.addData(DataPoint(bmp.readAltitude(SEALEVELPRESSURE_HPA), millis()));
-  pressureData.addData(DataPoint(bmp.pressure, millis()));
+  altitudeData.addData(DataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA)));
+  pressureData.addData(DataPoint(current_time, bmp.pressure));
+
+  Serial.print("Loop time: ");
+  Serial.println((millis() - current_time));
 
 }
 
