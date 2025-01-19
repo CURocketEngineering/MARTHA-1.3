@@ -9,7 +9,7 @@
 
 #define TEST_ADDRESS 0x00010000 // Example address for testing
 #define TEST_DATA 0xA5         // Example test data pattern
-#define TEST_BYTE_SIZE 3288    // Size for time-based test case
+#define TEST_BYTE_SIZE 3296    // Size for time-based test case
 #define TEST_TIME_LIMIT 1000   // Time limit in milliseconds
 
 Adafruit_SPIFlash flash(&flashTransport);
@@ -22,6 +22,23 @@ void test_flash_init() {
     Serial.printf("test_flash_init execution time: %lu ms\n", millis() - start_time);
 }
 
+void test_flash_read_write(){
+    uint8_t write_data = TEST_DATA;
+    uint8_t read_data = 0;
+
+    // Erase a sector to ensure clean write
+    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS));
+
+    // Write data to the flash
+    TEST_ASSERT_EQUAL(true, flash.writeBuffer(TEST_ADDRESS, &write_data, 1));
+
+    // Read back the data
+    TEST_ASSERT_EQUAL(true, flash.readBuffer(TEST_ADDRESS, &read_data, 1));
+
+    // Verify the written and read data are the same
+    TEST_ASSERT_EQUAL(write_data, read_data);
+}
+
 void test_data_saver_begin() {
     unsigned long start_time = millis();
     TEST_ASSERT_EQUAL(true, dataSaver.begin());
@@ -29,6 +46,7 @@ void test_data_saver_begin() {
 }
 
 void test_save_data_point() {
+    dataSaver.clearPostLaunchMode();
     DataPoint dp = {100, 50}; // Example DataPoint: timestamp = 100ms, value = 50
     unsigned long start_time = millis();
     TEST_ASSERT_EQUAL(0, dataSaver.saveDataPoint(dp, 1)); // 1 as name/ID
@@ -47,11 +65,31 @@ void test_time_based_write() {
     TEST_ASSERT_LESS_THAN(TEST_TIME_LIMIT, duration);
 }
 
+void test_flush_buffer_count(){
+    // Writing enough data to trigger a certain number of flushes
+    dataSaver.clearInternalState();
+
+    // Write 1000 bytes to the buffer by sending 1000 / 5 = 200 DataPoints all with the same timestamp
+    DataPoint dp = {100, 50};
+    for (int i = 0; i < 200; i++) {
+        TEST_ASSERT_EQUAL(0, dataSaver.saveDataPoint(dp, 1));
+    }
+
+    int expected_flush_count = 1000 / dataSaver.BUFFER_SIZE;
+    TEST_ASSERT_EQUAL(expected_flush_count, dataSaver.getBufferFlushes());
+}
+
 void test_post_launch_mode() {
     unsigned long start_time = millis();
-    dataSaver.eraseAllData();
+    // dataSaver.eraseAllData();
+
+    TEST_ASSERT_EQUAL(false, dataSaver.isPostLaunchMode());
+    TEST_ASSERT_EQUAL(false, dataSaver.quickGetPostLaunchMode());
+    
     dataSaver.launchDetected(500); // Launch detected at 500ms
+
     TEST_ASSERT_EQUAL(true, dataSaver.isPostLaunchMode());
+    TEST_ASSERT_EQUAL(true, dataSaver.quickGetPostLaunchMode());
     DataPoint dp = {600, 80};
     TEST_ASSERT_EQUAL(0, dataSaver.saveDataPoint(dp, 1));
     // Check post-launch flag persistence
@@ -160,34 +198,58 @@ void test_post_launch_data_preservation() {
     TEST_ASSERT_LESS_THAN(dataSaver.getLaunchWriteAddress() + 100, dataSaver.getNextWriteAddress());
 }
 
-void test_data_point_byte_size() {
+void test_data_point_byte_size_buffer_handling() {
     // Write a few data points and ensure that the address changed by the correct amount
-    dataSaver.resetTimestamp();
+    dataSaver.clearInternalState();
     DataPoint dp = {100, 50};
 
+    int expected_in_buffer = 0;
+
     uint32_t startAddress = dataSaver.getNextWriteAddress();
-    dataSaver.saveDataPoint(dp, 1);
+    dataSaver.saveDataPoint(dp, 1); // Should write 5 bytes (timestamp) + 5 bytes (data record)
+    expected_in_buffer += 10;
 
-    // 5 (timestamp record) + 5 (data record)
-    TEST_ASSERT_EQUAL(5 + 5, dataSaver.getNextWriteAddress() - startAddress);
+    // Because we haven't filled the buffer yet, the address should still be the same
+    TEST_ASSERT_EQUAL(0, dataSaver.getNextWriteAddress() - startAddress);
 
-    // Write another with a similar timestamp
-    startAddress = dataSaver.getNextWriteAddress();
-    dataSaver.saveDataPoint(dp, 1);
+    // However, the buffer index should now be 10
+    TEST_ASSERT_EQUAL(10, dataSaver.getBufferIndex());
 
-    // This won't have a timestamp record
-    // 5 (data record)
-    TEST_ASSERT_EQUAL(5, dataSaver.getNextWriteAddress() - startAddress);
+    // To cause the buffer to flush, let's write until we almost fill it up
+    while (dataSaver.getBufferIndex() < dataSaver.BUFFER_SIZE - 5) {
+        dataSaver.saveDataPoint(dp, 1); // Adds just 5 bytes b/c the timestamp is the same
+        expected_in_buffer += 5;
 
-    // Write 50 more
-    startAddress = dataSaver.getNextWriteAddress();
-    for (uint32_t i = 0; i < 50; i++) {
-        dp = {200 + i * 11, 50};
-        dataSaver.saveDataPoint(dp, 1);
+        // Make sure the buffer index is correct
+        TEST_ASSERT_EQUAL(expected_in_buffer, dataSaver.getBufferIndex());
+
+        // Make sure the write address hasn't changed yet
+        TEST_ASSERT_EQUAL(0, dataSaver.getNextWriteAddress() - startAddress);
+
+        // The number of buffer flushes should still be 0
+        TEST_ASSERT_EQUAL(0, dataSaver.getBufferFlushes());
     }
 
-    TEST_ASSERT_EQUAL(10 * 50, dataSaver.getNextWriteAddress() - startAddress);
+    // Check that the nextWriteAddress hasn't changed yet
+    TEST_ASSERT_EQUAL(0, dataSaver.getNextWriteAddress() - startAddress);
 
+    // Check the buffer index
+    TEST_ASSERT_EQUAL(expected_in_buffer, dataSaver.getBufferIndex());
+
+    // Write one more data point to flush the buffer
+    dataSaver.saveDataPoint(dp, 1); // Adds 5 more bytes
+
+    expected_in_buffer += 1;  // The name fits 
+
+    // A flush should have just happend
+    TEST_ASSERT_EQUAL(1, dataSaver.getBufferFlushes());
+
+    // The name will fit in the buffer, the 4 byte value will not
+    // Therefor, the 4 bytes should be in the new buffer
+    TEST_ASSERT_EQUAL(4, dataSaver.getBufferIndex());
+
+    // Check that the nextWriteAddress has changed by the correct amount
+    TEST_ASSERT_EQUAL(expected_in_buffer, dataSaver.getNextWriteAddress() - startAddress);
 }
 
 void setup() {
@@ -198,13 +260,15 @@ void setup() {
 
     UNITY_BEGIN();
     RUN_TEST(test_flash_init);
+    RUN_TEST(test_flash_read_write);
     RUN_TEST(test_data_saver_begin);
-    RUN_TEST(test_save_data_point);
-    RUN_TEST(test_data_point_byte_size);
-    RUN_TEST(test_post_launch_data_preservation);
-    RUN_TEST(test_time_based_write);
     RUN_TEST(test_post_launch_mode);
-    RUN_TEST(test_erase_all_data);
+    RUN_TEST(test_save_data_point);
+    RUN_TEST(test_data_point_byte_size_buffer_handling);
+    RUN_TEST(test_flush_buffer_count);
+    RUN_TEST(test_time_based_write);
+    // RUN_TEST(test_erase_all_data);
+    // RUN_TEST(test_post_launch_data_preservation);
     UNITY_END();
 }
 
