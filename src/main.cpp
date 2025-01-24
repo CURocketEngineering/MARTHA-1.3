@@ -13,7 +13,6 @@
 #include "data_handling/DataNames.h"
 #include "flash_config.h"
 #include "data_handling/LaunchPredictor.h"
-#include <string>
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 
