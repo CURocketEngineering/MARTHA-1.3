@@ -46,9 +46,14 @@ SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 LaunchPredictor launchPredictor(30, 1000, 40);
 
-HardwareSerial UART(PB7, PB6);
+#ifdef PCB_MARTHA
+CommandLine cmdLine(&Serial);
+#endif 
 
-CommandLine cmdLine;
+#ifdef MASON_CUSTOM_MARTHA_PCB
+HardwareSerial UART(PB7, PB6);
+CommandLine cmdLine(&UART);
+#endif
 
 void testCommand(queue<string> arguments, string& response);
 void ping(queue<string> arguments, string& response);
@@ -151,7 +156,7 @@ void loop() {
     digitalWrite(DEBUG_LED, !digitalRead(DEBUG_LED));
   }
 
-  Serial.write("Reading sensors...\n");
+  // Serial.write("Reading sensors...\n");
 
   sensors_event_t accel;
   sensors_event_t gyro;
@@ -213,21 +218,21 @@ void loop() {
   altitudeData.addData(DataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA)));
   pressureData.addData(DataPoint(current_time, bmp.pressure));
 
-  Serial.print("Loop time: ");
-  Serial.println((millis() - current_time));
+  // Serial.print("Loop time: ");
+  // Serial.println((millis() - current_time));
 
 }
 
 
 void testCommand(std::queue<std::string> arguments, std::string& response) {
-    UART.println("Test command executed.");
+    cmdLine.println("Test command executed.");
     
     // Check if there are any arguments
     if (arguments.empty()) {
-        UART.println("No arguments provided.");
+        cmdLine.println("No arguments provided.");
         response = "Test command executed. Arguments: None";
     } else {
-        UART.println("Arguments received:");
+        cmdLine.println("Arguments received:");
         response = "Test command executed. Arguments: ";
         
         // Process each argument
@@ -236,7 +241,7 @@ void testCommand(std::queue<std::string> arguments, std::string& response) {
             arguments.pop();
             
             // Print each argument to the UART
-            UART.println(" - " + String(argument.c_str()));
+            cmdLine.println(" - " + argument);
             
             // Append the argument to the response
             response += argument + " ";
@@ -246,6 +251,6 @@ void testCommand(std::queue<std::string> arguments, std::string& response) {
 
 
 void ping(queue<string> arguments, string& response) {
-    UART.println("Pinged the microntroller ");
+    cmdLine.println("Pinged the microntroller ");
 }
 
