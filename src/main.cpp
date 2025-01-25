@@ -6,6 +6,7 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP3XX.h>
 #include "pins.h"
+#include "UARTCommandHandler.h"
 
 #include "data_handling/SensorDataHandler.h"
 #include "data_handling/DataSaverSPI.h"
@@ -44,6 +45,15 @@ SensorDataHandler yMagData(MAGNETOMETER_Y, &dataSaver);
 SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 LaunchPredictor launchPredictor(30, 1000, 40);
+
+HardwareSerial UART(PB7, PB6);
+
+CommandLine cmdLine;
+
+void testCommand(queue<string> arguments, string& response);
+void ping(queue<string> arguments, string& response);
+void dumpFlash(queue<string> arguments, string& response);
+
 
 void setup() {
 
@@ -93,11 +103,11 @@ void setup() {
   mag.setOperationMode(LIS3MDL_CONTINUOUSMODE);
   mag.setPerformanceMode(LIS3MDL_MEDIUMMODE);
 
-  // mag.setIntThreshold(500);
-  // mag.configInterrupt(false, false, true, // enable z axis
-  //                         true, // polarity
-  //                         false, // don't latch
-  //                         true); // enabled!
+  mag.setIntThreshold(500);
+  mag.configInterrupt(false, false, true, // enable z axis
+                          true, // polarity
+                          false, // don't latch
+                          true); // enabled!
 
   if (mag.getDataRate() != LIS3MDL_DATARATE_155_HZ) {
     Serial.println("Failed to set Mag data rate");
@@ -122,9 +132,16 @@ void setup() {
   }
 
   Serial.println("Setup complete!");
+
+  cmdLine.addCommand("test", "t", testCommand);  
+  cmdLine.addCommand("ping", "p", ping);    
+  cmdLine.begin();
+
 }
 
 void loop() {
+
+  cmdLine.readInput();
 
   loop_count += 1;
 
@@ -134,7 +151,7 @@ void loop() {
     digitalWrite(DEBUG_LED, !digitalRead(DEBUG_LED));
   }
 
-  // Serial.write("Reading sensors...\n");
+  Serial.write("Reading sensors...\n");
 
   sensors_event_t accel;
   sensors_event_t gyro;
@@ -201,4 +218,34 @@ void loop() {
 
 }
 
+
+void testCommand(std::queue<std::string> arguments, std::string& response) {
+    UART.println("Test command executed.");
+    
+    // Check if there are any arguments
+    if (arguments.empty()) {
+        UART.println("No arguments provided.");
+        response = "Test command executed. Arguments: None";
+    } else {
+        UART.println("Arguments received:");
+        response = "Test command executed. Arguments: ";
+        
+        // Process each argument
+        while (!arguments.empty()) {
+            std::string argument = arguments.front();
+            arguments.pop();
+            
+            // Print each argument to the UART
+            UART.println(" - " + String(argument.c_str()));
+            
+            // Append the argument to the response
+            response += argument + " ";
+        }
+    }
+}
+
+
+void ping(queue<string> arguments, string& response) {
+    UART.println("Pinged the microntroller ");
+}
 
