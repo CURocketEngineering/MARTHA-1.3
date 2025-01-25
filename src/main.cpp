@@ -46,19 +46,11 @@ SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 LaunchPredictor launchPredictor(30, 1000, 40);
 
-#ifdef PCB_MARTHA
 CommandLine cmdLine(&Serial);
-#endif 
-
-#ifdef MASON_CUSTOM_MARTHA_PCB
-HardwareSerial UART(PB7, PB6);
-CommandLine cmdLine(&UART);
-#endif
 
 void testCommand(queue<string> arguments, string& response);
 void ping(queue<string> arguments, string& response);
 void dumpFlash(queue<string> arguments, string& response);
-
 
 void setup() {
 

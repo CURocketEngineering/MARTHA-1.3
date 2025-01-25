@@ -20,6 +20,10 @@
 
 #endif // PCB_MARTHA
 
+#ifdef MASON_MARTHA_PCB
+  HardwareSerial SUART1(PB7, PB6); // RX TX
+  #define Serial SUART1
+#endif
 
 #ifdef BB_MARTHA
 
