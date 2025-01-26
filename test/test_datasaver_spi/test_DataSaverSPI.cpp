@@ -4,6 +4,7 @@
 #include <Adafruit_SPIFlash.h>
 #include "data_handling/DataSaverSPI.h"
 #include "data_handling/DataPoint.h"
+#include "data_handling/DataNames.h"
 
 #include "flash_config.h"
 
@@ -272,6 +273,64 @@ void test_data_point_byte_size_buffer_handling() {
     TEST_ASSERT_EQUAL(dataSaver.BUFFER_SIZE, dataSaver.getNextWriteAddress() - startAddress);
 }
 
+void test_expected_data_on_chip_2_buf_flushes(){
+    // Write a few buffers worth of data and read the data to ensure it's all correct
+
+    // Clear the target sector
+    flash.eraseSector(DATA_START_ADDRESS / SFLASH_SECTOR_SIZE);
+
+    // First byte should be all 0xff
+    uint8_t readData;
+    TEST_ASSERT_EQUAL(true, flash.readBuffer(DATA_START_ADDRESS, &readData, 1));
+    TEST_ASSERT_EQUAL(0xff, readData);
+
+    // Reset data saver
+    dataSaver.clearInternalState();
+
+    // 51 data points fit into a buffer (5 bytes per data point = 255 bytes)
+    // Write 103 datapoints to fill 2 buffers (and flush the second one), then go through and read them all back
+    // never change the timestamp to avoid extra complexity, only the first will trigger a timestamp
+    int needed_datapoints = dataSaver.BUFFER_SIZE / 5 * 2; // No +1 b/c first timestamp
+    for (int i = 0; i < needed_datapoints; i++) {
+        DataPoint dp = {100, static_cast<float>(i) * 10};
+        TEST_ASSERT_EQUAL(0, dataSaver.saveDataPoint(dp, i));
+    }
+
+    // Ensure that 2 flushes happended
+    TEST_ASSERT_EQUAL(2, dataSaver.getBufferFlushes());
+
+    TEST_ASSERT_EQUAL(256, SFLASH_PAGE_SIZE); // Ensure the page size is correct
+
+    uint8_t name;
+
+    // Read back the data
+    for (int page = 0; page < 2; page++) {
+        for (int i = 0; i < 51; i++) {
+            int expVal = page * 51 + (i - 1); // -1 because the first one is a timestamp
+            uint32_t address = DATA_START_ADDRESS + page * SFLASH_PAGE_SIZE + i * 5;
+            TEST_ASSERT_EQUAL(1, flash.readBuffer(address, &name, 1));
+            
+            // Check that the value and name are correct
+            if (i == 0 && page == 0){
+                // timestamp
+                uint32_t timestamp;
+                TEST_ASSERT_EQUAL(4, flash.readBuffer(address + 1, reinterpret_cast<uint8_t*>(&timestamp), 4));
+                TEST_ASSERT_EQUAL(TIMESTAMP, name);
+                TEST_ASSERT_EQUAL(100, timestamp);
+            } else {
+                float value; 
+                TEST_ASSERT_EQUAL(4, flash.readBuffer(address + 1, reinterpret_cast<uint8_t*>(&value), 4));
+                // Serial.print("Does ");
+                // Serial.print(expVal);
+                // Serial.print(" == ");
+                // Serial.println(name);
+                TEST_ASSERT_EQUAL(expVal, name); // Name
+                TEST_ASSERT_EQUAL(expVal * 10, value); // Data
+            }
+        }
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     while (!Serial) {
@@ -287,6 +346,7 @@ void setup() {
     RUN_TEST(test_data_point_byte_size_buffer_handling);
     RUN_TEST(test_flush_buffer_count);
     RUN_TEST(test_time_based_write);
+    RUN_TEST(test_expected_data_on_chip_2_buf_flushes);
     // RUN_TEST(test_erase_all_data);
     // RUN_TEST(test_post_launch_data_preservation);
     UNITY_END();
