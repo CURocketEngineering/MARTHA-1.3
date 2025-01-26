@@ -7,8 +7,12 @@
 
 #include "flash_config.h"
 
-#define TEST_ADDRESS 0x00010000 // Example address for testing
-#define TEST_DATA 0xA5         // Example test data pattern
+#define TEST_ADDRESS_1 0x002000 // Example address for testing
+#define TEST_DATA_1 0xA5         // Example test data pattern
+
+#define TEST_ADDRESS_2 0x003000 // Example address for testing
+#define TEST_DATA_2 0xB2         // Example test data pattern
+
 #define TEST_BYTE_SIZE 3296    // Size for time-based test case
 #define TEST_TIME_LIMIT 1000   // Time limit in milliseconds
 
@@ -23,20 +27,35 @@ void test_flash_init() {
 }
 
 void test_flash_read_write(){
-    uint8_t write_data = TEST_DATA;
+    uint8_t write_data = TEST_DATA_1;
     uint8_t read_data = 0;
-
-    // Erase a sector to ensure clean write
-    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS));
+    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS_1 / SFLASH_SECTOR_SIZE));
 
     // Write data to the flash
-    TEST_ASSERT_EQUAL(true, flash.writeBuffer(TEST_ADDRESS, &write_data, 1));
+    TEST_ASSERT_EQUAL(true, flash.writeBuffer(TEST_ADDRESS_1, &write_data, 1));
 
     // Read back the data
-    TEST_ASSERT_EQUAL(true, flash.readBuffer(TEST_ADDRESS, &read_data, 1));
+    TEST_ASSERT_EQUAL(true, flash.readBuffer(TEST_ADDRESS_1, &read_data, 1));
 
     // Verify the written and read data are the same
     TEST_ASSERT_EQUAL(write_data, read_data);
+
+    // Erase sector and ensure it's erased
+    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS_1 / SFLASH_SECTOR_SIZE));
+    TEST_ASSERT_EQUAL(true, flash.readBuffer(TEST_ADDRESS_1, &read_data, 1));
+    TEST_ASSERT_EQUAL(0xff, read_data);
+
+    // Use a different address and data pattern
+    write_data = TEST_DATA_2;
+    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS_2 / SFLASH_SECTOR_SIZE));
+    TEST_ASSERT_EQUAL(true, flash.writeBuffer(TEST_ADDRESS_2, &write_data, 1));
+    TEST_ASSERT_EQUAL(true, flash.readBuffer(TEST_ADDRESS_2, &read_data, 1));
+    TEST_ASSERT_EQUAL(write_data, read_data);
+    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS_2 / SFLASH_SECTOR_SIZE));
+    
+    // Make sure the sector is erased
+    TEST_ASSERT_EQUAL(true, flash.readBuffer(TEST_ADDRESS_2, &read_data, 1));
+    TEST_ASSERT_EQUAL(0xff, read_data);
 }
 
 void test_data_saver_begin() {
@@ -57,9 +76,9 @@ void test_save_data_point() {
 
 void test_time_based_write() {
     uint8_t testData[TEST_BYTE_SIZE];
-    memset(testData, TEST_DATA, TEST_BYTE_SIZE); // Fill buffer with test data
+    memset(testData, TEST_DATA_1, TEST_BYTE_SIZE); // Fill buffer with test data
     unsigned long start_time = millis();
-    TEST_ASSERT_EQUAL(TEST_BYTE_SIZE, flash.writeBuffer(TEST_ADDRESS, testData, TEST_BYTE_SIZE));
+    TEST_ASSERT_EQUAL(TEST_BYTE_SIZE, flash.writeBuffer(TEST_ADDRESS_1, testData, TEST_BYTE_SIZE));
     unsigned long duration = millis() - start_time;
     Serial.printf("test_time_based_write execution time: %lu ms\n", duration);
     TEST_ASSERT_LESS_THAN(TEST_TIME_LIMIT, duration);
@@ -103,8 +122,8 @@ void test_erase_all_data() {
     dataSaver.saveDataPoint(dp, 1);
 
     // Also write to flash to ensure it's erased
-    uint8_t writeData = TEST_DATA;
-    flash.writeBuffer(TEST_ADDRESS, &writeData, 1);
+    uint8_t writeData = TEST_DATA_1;
+    flash.writeBuffer(TEST_ADDRESS_1, &writeData, 1);
 
     unsigned long start_time = millis();
     dataSaver.eraseAllData();
@@ -112,8 +131,8 @@ void test_erase_all_data() {
 
     // Read from flash to ensure it's erased
     uint8_t readData;
-    flash.readBuffer(TEST_ADDRESS, &readData, 1);
-    TEST_ASSERT_NOT_EQUAL(TEST_DATA, readData);
+    flash.readBuffer(TEST_ADDRESS_1, &readData, 1);
+    TEST_ASSERT_NOT_EQUAL(TEST_DATA_1, readData);
 
     // Ensure next write starts fresh
     dp.timestamp_ms = 200;
