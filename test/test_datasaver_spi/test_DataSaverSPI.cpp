@@ -100,7 +100,7 @@ void test_flush_buffer_count(){
 
 void test_post_launch_mode() {
     unsigned long start_time = millis();
-    // dataSaver.eraseAllData();
+    dataSaver.clearPostLaunchMode();
 
     TEST_ASSERT_EQUAL(false, dataSaver.isPostLaunchMode());
     TEST_ASSERT_EQUAL(false, dataSaver.quickGetPostLaunchMode());
@@ -234,8 +234,10 @@ void test_data_point_byte_size_buffer_handling() {
     // However, the buffer index should now be 10
     TEST_ASSERT_EQUAL(10, dataSaver.getBufferIndex());
 
+    int max_in_buffer = dataSaver.BUFFER_SIZE / 5 * 5; // Nearest multiple of 5 less than the buffer size
+
     // To cause the buffer to flush, let's write until we almost fill it up
-    while (dataSaver.getBufferIndex() < dataSaver.BUFFER_SIZE - 5) {
+    while (dataSaver.getBufferIndex() < max_in_buffer) {
         dataSaver.saveDataPoint(dp, 1); // Adds just 5 bytes b/c the timestamp is the same
         expected_in_buffer += 5;
 
@@ -258,17 +260,16 @@ void test_data_point_byte_size_buffer_handling() {
     // Write one more data point to flush the buffer
     dataSaver.saveDataPoint(dp, 1); // Adds 5 more bytes
 
-    expected_in_buffer += 1;  // The name fits 
+    expected_in_buffer += 0;  // The name fits 
 
-    // A flush should have just happend
+    // A flush should have just happend the entire buffer size is written to flash
     TEST_ASSERT_EQUAL(1, dataSaver.getBufferFlushes());
 
-    // The name will fit in the buffer, the 4 byte value will not
-    // Therefor, the 4 bytes should be in the new buffer
-    TEST_ASSERT_EQUAL(4, dataSaver.getBufferIndex());
+    // All of this data point is forced into the next buffer
+    TEST_ASSERT_EQUAL(5, dataSaver.getBufferIndex());
 
     // Check that the nextWriteAddress has changed by the correct amount
-    TEST_ASSERT_EQUAL(expected_in_buffer, dataSaver.getNextWriteAddress() - startAddress);
+    TEST_ASSERT_EQUAL(dataSaver.BUFFER_SIZE, dataSaver.getNextWriteAddress() - startAddress);
 }
 
 void setup() {
