@@ -290,7 +290,8 @@ void test_expected_data_on_chip_2_buf_flushes(){
     // 51 data points fit into a buffer (5 bytes per data point = 255 bytes)
     // Write 103 datapoints to fill 2 buffers (and flush the second one), then go through and read them all back
     // never change the timestamp to avoid extra complexity, only the first will trigger a timestamp
-    int needed_datapoints = dataSaver.BUFFER_SIZE / 5 * 2; // No +1 b/c first timestamp
+    int datapoints_per_buffer = dataSaver.BUFFER_SIZE / 5;
+    int needed_datapoints = datapoints_per_buffer * 2; // No +1 b/c first timestamp
     for (int i = 0; i < needed_datapoints; i++) {
         DataPoint dp = {100, static_cast<float>(i) * 10};
         TEST_ASSERT_EQUAL(0, dataSaver.saveDataPoint(dp, i));
@@ -305,8 +306,8 @@ void test_expected_data_on_chip_2_buf_flushes(){
 
     // Read back the data
     for (int page = 0; page < 2; page++) {
-        for (int i = 0; i < 51; i++) {
-            int expVal = page * 51 + (i - 1); // -1 because the first one is a timestamp
+        for (int i = 0; i < datapoints_per_buffer; i++) {
+            int expVal = page * datapoints_per_buffer + (i - 1); // -1 because the first one is a timestamp
             uint32_t address = DATA_START_ADDRESS + page * SFLASH_PAGE_SIZE + i * 5;
             TEST_ASSERT_EQUAL(1, flash.readBuffer(address, &name, 1));
             
