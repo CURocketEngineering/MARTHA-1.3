@@ -3,6 +3,7 @@
 #include "Adafruit_LSM6DSOX.h"
 #include "Adafruit_LIS3MDL.h"
 #include "FlashDriver.h"
+#include "CC1125.h"
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP3XX.h>
 #include "pins.h"
@@ -48,9 +49,14 @@ LaunchPredictor launchPredictor(30, 1000, 40);
 
 CommandLine cmdLine(&Serial);
 
+#ifdef MASON_MARTHA_PCB
+  CC1125 rf(CC1125_RESET, CC1125_CS, &sox, &mag, &bmp);
+#endif
+
 void testCommand(queue<string> arguments, string& response);
 void ping(queue<string> arguments, string& response);
 void dumpFlash(queue<string> arguments, string& response);
+void groundStation(queue<string> arguments, string& response)
 
 void setup() {
 
@@ -131,8 +137,10 @@ void setup() {
   Serial.println("Setup complete!");
 
   cmdLine.addCommand("test", "t", testCommand);  
-  cmdLine.addCommand("ping", "p", ping);    
+  cmdLine.addCommand("ping", "p", ping);  
+  cmdLine.addCommand("telemtry", "gs", groundStation) ; 
   cmdLine.begin();
+
 
 }
 
@@ -246,3 +254,21 @@ void ping(queue<string> arguments, string& response) {
     cmdLine.println("Pinged the microntroller ");
 }
 
+#ifdef MASON_MARTHA_PCB
+void groundStation(queue<string> arguments, string& response)
+{
+  CC1125Status status;
+  status = rf.init();
+  if(status != CC1125_SUCCESS)
+  {
+    Serial.println("Failed to initialize CC1125");
+  }
+  else
+  {
+    Serial.println("Initialize CC1125");
+    rf.telemetryGroundStation();
+  }
+
+  
+}
+#endif
