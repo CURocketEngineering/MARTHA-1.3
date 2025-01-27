@@ -56,7 +56,7 @@ CommandLine cmdLine(&Serial);
 void testCommand(queue<string> arguments, string& response);
 void ping(queue<string> arguments, string& response);
 void dumpFlash(queue<string> arguments, string& response);
-void groundStation(queue<string> arguments, string& response)
+void groundStation(queue<string> arguments, string& response);
 
 void setup() {
 
@@ -254,9 +254,10 @@ void ping(queue<string> arguments, string& response) {
     cmdLine.println("Pinged the microntroller ");
 }
 
-#ifdef MASON_MARTHA_PCB
+
 void groundStation(queue<string> arguments, string& response)
 {
+  #ifdef MASON_MARTHA_PCB
   CC1125Status status;
   status = rf.init();
   if(status != CC1125_SUCCESS)
@@ -268,7 +269,9 @@ void groundStation(queue<string> arguments, string& response)
     Serial.println("Initialize CC1125");
     rf.telemetryGroundStation();
   }
-
+  #else
+    Serial.println("Not supported on this board");
+  #endif
   
 }
-#endif
+
