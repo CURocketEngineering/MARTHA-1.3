@@ -21,8 +21,10 @@
 #endif // PCB_MARTHA
 
 #ifdef MASON_MARTHA_PCB
-  HardwareSerial SUART1(PB7, PB6); // RX TX
-  #define Serial SUART1
+  #ifdef UART_TRANSMIT
+    HardwareSerial SUART1(PB7, PB6); // RX TX
+    #define Serial SUART1
+  #endif
 
   #define CC1125_RESET    PB15
   #define CC1125_CS       PB12

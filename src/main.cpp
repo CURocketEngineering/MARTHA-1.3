@@ -55,8 +55,8 @@ CommandLine cmdLine(&Serial);
 
 void testCommand(queue<string> arguments, string& response);
 void ping(queue<string> arguments, string& response);
-void dumpFlash(queue<string> arguments, string& response);
-void groundStation(queue<string> arguments, string& response);
+void rfMode(CC1125 &rf);
+void printStructBytes(const DataPoints_t* data);
 
 void setup() {
 
@@ -131,22 +131,33 @@ void setup() {
 
   // Initalize data saver
   if (!dataSaver.begin()) {
+    flash.eraseChip();
     Serial.println("Failed to initialize data saver");
   }
+
+  #ifdef MASON_MARTHA_PCB
+  CC1125Status status;
+  status = rf.init();
+  if(status != CC1125_SUCCESS)
+    Serial.println("Failed to initialize CC1125");
+  else
+    Serial.println("Initialize CC1125");
+  #endif
+
 
   Serial.println("Setup complete!");
 
   cmdLine.addCommand("test", "t", testCommand);  
   cmdLine.addCommand("ping", "p", ping);  
-  cmdLine.addCommand("telemtry", "gs", groundStation) ; 
-  cmdLine.begin();
+  // cmdLine.begin();
+  delay(2000);
 
 
 }
 
 void loop() {
 
-  cmdLine.readInput();
+  // cmdLine.readInput();
 
   loop_count += 1;
 
@@ -165,9 +176,9 @@ void loop() {
 
   mag.getEvent(&mag_event);
 
-  xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
-  yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
-  zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
+  // xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
+  // yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
+  // zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
 
   sox.getEvent(&accel, &gyro, &temp);
 
@@ -182,44 +193,46 @@ void loop() {
   // Serial.write("Altitude: ");
   // Serial.println(bmp.readAltitude(SEALEVELPRESSURE_HPA));
 
-  xAclData.addData(DataPoint(current_time, accel.acceleration.x));
-  yAclData.addData(DataPoint(current_time, accel.acceleration.y));
-  zAclData.addData(DataPoint(current_time, accel.acceleration.z));
+  // xAclData.addData(DataPoint(current_time, accel.acceleration.x));
+  // yAclData.addData(DataPoint(current_time, accel.acceleration.y));
+  // zAclData.addData(DataPoint(current_time, accel.acceleration.z));
 
   launchPredictor.update(DataPoint(current_time, accel.acceleration.x),
                          DataPoint(current_time, accel.acceleration.y),
                          DataPoint(current_time, accel.acceleration.z));
 
   // Blink fast if in post launch mode (DO NOT LAUNCH)
-  if (dataSaver.quickGetPostLaunchMode()) {
-    led_toggle_delay = 100;
-  } else {
-    // If launch detected, put the dataSaver into post launch mode
-    // i.e. all the data written from this point on is sacred and will not be overwritten
-    if (launchPredictor.isLaunched()){
-      Serial.println("Launch detected!");
-      dataSaver.launchDetected(launchPredictor.getLaunchedTime());
-    }
-  }
+  // if (dataSaver.quickGetPostLaunchMode()) {
+  //   led_toggle_delay = 100;
+  // } else {
+  //   // If launch detected, put the dataSaver into post launch mode
+  //   // i.e. all the data written from this point on is sacred and will not be overwritten
+  //   if (launchPredictor.isLaunched()){
+  //     Serial.println("Launch detected!");
+  //     dataSaver.launchDetected(launchPredictor.getLaunchedTime());
+  //   }
+  // }
 
   // Serial.println(launchPredictor.getMedianAccelerationSquared());
 
-  xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
-  yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
-  zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
+  // xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
+  // yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
+  // zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
 
-  tempData.addData(DataPoint(current_time, temp.temperature));
+  // tempData.addData(DataPoint(current_time, temp.temperature));
 
   if (! bmp.performReading()) {
     Serial.println("Failed to perform reading :(");
     return;
   }
 
-  altitudeData.addData(DataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA)));
-  pressureData.addData(DataPoint(current_time, bmp.pressure));
+  // altitudeData.addData(DataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA)));
+  // pressureData.addData(DataPoint(current_time, bmp.pressure));
 
   // Serial.print("Loop time: ");
   // Serial.println((millis() - current_time));
+
+  rfMode(rf);
 
 }
 
@@ -255,23 +268,67 @@ void ping(queue<string> arguments, string& response) {
 }
 
 
-void groundStation(queue<string> arguments, string& response)
+void rfMode(CC1125 &rf)
 {
   #ifdef MASON_MARTHA_PCB
-  CC1125Status status;
-  status = rf.init();
-  if(status != CC1125_SUCCESS)
-  {
-    Serial.println("Failed to initialize CC1125");
-  }
-  else
-  {
-    Serial.println("Initialize CC1125");
-    rf.telemetryGroundStation();
-  }
+    DataPoints_t *data = (DataPoints_t*)malloc(sizeof(DataPoints_t));
+    memset(data, 0, sizeof(DataPoints_t));
+    #ifdef RF_RX
+      uint8_t received[0x80] = {0};
+      rf.runRX(received);
+      
+      //memcpy(&data, received, sizeof(DataPoints_t));
+
+      Serial.print("BMP390 DATA:\r\n");
+      Serial.print("Pressure: "); Serial.print(data->altitude); Serial.print(" Pa\t");
+      Serial.print("Altitude: "); Serial.print(data->pressure); Serial.println(" m\n");
+      Serial.print("Temperature: "); Serial.print(data->temp_bmp); Serial.println(" d/s\n");
+
+      Serial.print("LSM6DSOX DATA:\r\n");
+      Serial.print("X: "); Serial.print(data->acceleration_x); Serial.print(" m/s^2\t");
+      Serial.print("Y: "); Serial.print(data->acceleration_y); Serial.print(" m/s^2\t");
+      Serial.print("Z: "); Serial.print(data->acceleration_z); Serial.println(" m/s^2");
+      Serial.print("X: "); Serial.print(data->gyro_x); Serial.print(" d/s\t");
+      Serial.print("Y: "); Serial.print(data->gyro_y); Serial.print(" d/s\t");
+      Serial.print("Z: "); Serial.print(data->gyro_z); Serial.println(" d/s\n");
+
+      Serial.print("LIS3MDL DATA:\r\n");
+      Serial.print("X: "); Serial.print(data->magnetic_x); Serial.print(" µT\t");
+      Serial.print("Y: "); Serial.print(data->magnetic_y); Serial.print(" µT\t");
+      Serial.print("Z: "); Serial.print(data->magnetic_z); Serial.println(" µT\n");  
+    #elif defined(RF_TX)
+      rf.retriveData(data); // Populate data
+      rf.runTX(reinterpret_cast<uint8_t*>(data), sizeof(DataPoints_t));
+      printStructBytes(data);
+    #else
+      // Default case or fallback code
+      Serial.println("No RF mode defined. Check configuration.");
+    #endif
+    free(data);
   #else
     Serial.println("Not supported on this board");
   #endif
   
+}
+
+void printStructBytes(const DataPoints_t* data)
+{
+    // Cast the struct pointer to a uint8_t pointer (byte pointer)
+    uint8_t* bytePtr = (uint8_t*)data;
+
+    // Print each byte in hexadecimal format
+    size_t structSize = sizeof(DataPoints_t);
+    for (size_t i = 0; i < structSize; i++)
+    {
+        // Print each byte in the format "Byte 0: 0xXX"
+        Serial.print("Byte ");
+        Serial.print(i);
+        Serial.print(": 0x");
+        if (bytePtr[i] < 0x10) {
+            Serial.print("0"); // Print leading zero for single-digit hex values
+        }
+        Serial.print(bytePtr[i], HEX);
+        Serial.println(); // Move to the next line after each byte
+    }
 }
 
