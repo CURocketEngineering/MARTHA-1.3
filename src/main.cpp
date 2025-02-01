@@ -12,7 +12,10 @@
 #include "data_handling/DataSaverSPI.h"
 #include "data_handling/DataNames.h"
 #include "flash_config.h"
-#include "data_handling/LaunchPredictor.h"
+#include "state_estimation/LaunchPredictor.h"
+#include "state_estimation/ApogeeDetector.h"
+#include "state_estimation/States.h"
+#include "state_estimation/StateMachine.h"
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 
@@ -46,8 +49,11 @@ SensorDataHandler yMagData(MAGNETOMETER_Y, &dataSaver);
 SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
+SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
 
 LaunchPredictor launchPredictor(30, 1000, 40);
+ApogeeDetector apogeeDetector;
+StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector);
 
 CommandLine cmdLine(&Serial);
 
@@ -184,35 +190,31 @@ void loop() {
 
   sox.getEvent(&accel, &gyro, &temp);
 
-  // Serial.write("ACL X: ");
-  // Serial.println(accel.acceleration.x);
-  // Serial.write("GYRO X: ");
-  // Serial.println(gyro.gyro.x);
-  // Serial.write("TEMP: ");
-  // Serial.println(temp.temperature);
-  // Serial.write("MAG X: ");
-  // Serial.println(mag_event.magnetic.x);
-  // Serial.write("Altitude: ");
-  // Serial.println(bmp.readAltitude(SEALEVELPRESSURE_HPA));
+  DataPoint xAclDataPoint(current_time, accel.acceleration.x);
+  DataPoint yAclDataPoint(current_time, accel.acceleration.y);
+  DataPoint zAclDataPoint(current_time, accel.acceleration.z);
 
-  xAclData.addData(DataPoint(current_time, accel.acceleration.x));
-  yAclData.addData(DataPoint(current_time, accel.acceleration.y));
-  zAclData.addData(DataPoint(current_time, accel.acceleration.z));
+  xAclData.addData(xAclDataPoint);
+  yAclData.addData(yAclDataPoint);
+  zAclData.addData(zAclDataPoint);
 
-  launchPredictor.update(DataPoint(current_time, accel.acceleration.x),
-                         DataPoint(current_time, accel.acceleration.y),
-                         DataPoint(current_time, accel.acceleration.z));
+  DataPoint altDataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA));
 
-  // Blink fast if in post launch mode (DO NOT LAUNCH)
-  if (dataSaver.quickGetPostLaunchMode()) {
+  altitudeData.addData(altDataPoint);
+
+
+  // Will update the launch predictor and apogee detector
+  // Will log updates to the data saver
+  // Will put the data saver in post-launch mode if the launch predictor detects a launch
+  stateMachine.update(
+    xAclDataPoint,
+    yAclDataPoint,
+    zAclDataPoint,
+    altDataPoint
+  );
+
+  if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
     led_toggle_delay = 100;
-  } else {
-    // If launch detected, put the dataSaver into post launch mode
-    // i.e. all the data written from this point on is sacred and will not be overwritten
-    if (launchPredictor.isLaunched()){
-      Serial.println("Launch detected!");
-      dataSaver.launchDetected(launchPredictor.getLaunchedTime());
-    }
   }
 
   // Serial.println(launchPredictor.getMedianAccelerationSquared());
@@ -228,7 +230,7 @@ void loop() {
     return;
   }
 
-  altitudeData.addData(DataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA)));
+  
   pressureData.addData(DataPoint(current_time, bmp.pressure));
 
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
@@ -293,6 +295,17 @@ void printStatus(std::queue<std::string> arguments, std::string& response) {
     cmdLine.println(floatToString(launchPredictor.getLaunchedTime()));
     cmdLine.print("Median Acceleration Squared: ");
     cmdLine.println(floatToString(launchPredictor.getMedianAccelerationSquared()));
+
+    cmdLine.println("");
+    cmdLine.println("--Apogee Detector--");
+    cmdLine.print("Apogee Detected: ");
+    cmdLine.println(std::to_string(apogeeDetector.isApogeeDetected()));
+    cmdLine.print("Estimated Altitude: ");
+    cmdLine.println(floatToString(apogeeDetector.getEstimatedAltitude()));
+    cmdLine.print("Estimated Velocity: ");
+    cmdLine.println(floatToString(apogeeDetector.getEstimatedVelocity()));
+    cmdLine.print("Apogee Altitude: ");
+    cmdLine.println(floatToString(apogeeDetector.getApogee().data));
 
     cmdLine.println("");
     cmdLine.println("--Data Saver--");
