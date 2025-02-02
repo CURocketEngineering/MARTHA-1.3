@@ -52,7 +52,7 @@ SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
 SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
 
 LaunchPredictor launchPredictor(30, 1000, 40);
-ApogeeDetector apogeeDetector;
+ApogeeDetector apogeeDetector(0.25f, 1.0f, 2.0f);
 StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector);
 
 CommandLine cmdLine(&Serial);
@@ -213,7 +213,9 @@ void loop() {
     altDataPoint
   );
 
-  if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
+  if (stateMachine.getState() > STATE_ASCENT) {
+    led_toggle_delay = 50;
+  } else if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
     led_toggle_delay = 100;
   }
 
@@ -304,6 +306,12 @@ void printStatus(std::queue<std::string> arguments, std::string& response) {
     cmdLine.println(floatToString(apogeeDetector.getEstimatedAltitude()));
     cmdLine.print("Estimated Velocity: ");
     cmdLine.println(floatToString(apogeeDetector.getEstimatedVelocity()));
+    cmdLine.print("Inertial Vertical Acceleration: ");
+    cmdLine.println(floatToString(apogeeDetector.getInertialVerticalAcceleration()));
+    cmdLine.print("Vertical Axis: ");
+    cmdLine.println(std::to_string(apogeeDetector.getVerticalAxis()));
+    cmdLine.print("Vertical Direction: ");
+    cmdLine.println(std::to_string(apogeeDetector.getVerticalDirection()));
     cmdLine.print("Apogee Altitude: ");
     cmdLine.println(floatToString(apogeeDetector.getApogee().data));
 
