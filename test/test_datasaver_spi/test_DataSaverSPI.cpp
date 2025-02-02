@@ -4,11 +4,16 @@
 #include <Adafruit_SPIFlash.h>
 #include "data_handling/DataSaverSPI.h"
 #include "data_handling/DataPoint.h"
+#include "data_handling/DataNames.h"
 
 #include "flash_config.h"
 
-#define TEST_ADDRESS 0x00010000 // Example address for testing
-#define TEST_DATA 0xA5         // Example test data pattern
+#define TEST_ADDRESS_1 0x002000 // Example address for testing
+#define TEST_DATA_1 0xA5         // Example test data pattern
+
+#define TEST_ADDRESS_2 0x003000 // Example address for testing
+#define TEST_DATA_2 0xB2         // Example test data pattern
+
 #define TEST_BYTE_SIZE 3296    // Size for time-based test case
 #define TEST_TIME_LIMIT 1000   // Time limit in milliseconds
 
@@ -23,20 +28,35 @@ void test_flash_init() {
 }
 
 void test_flash_read_write(){
-    uint8_t write_data = TEST_DATA;
+    uint8_t write_data = TEST_DATA_1;
     uint8_t read_data = 0;
-
-    // Erase a sector to ensure clean write
-    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS));
+    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS_1 / SFLASH_SECTOR_SIZE));
 
     // Write data to the flash
-    TEST_ASSERT_EQUAL(true, flash.writeBuffer(TEST_ADDRESS, &write_data, 1));
+    TEST_ASSERT_EQUAL(true, flash.writeBuffer(TEST_ADDRESS_1, &write_data, 1));
 
     // Read back the data
-    TEST_ASSERT_EQUAL(true, flash.readBuffer(TEST_ADDRESS, &read_data, 1));
+    TEST_ASSERT_EQUAL(true, flash.readBuffer(TEST_ADDRESS_1, &read_data, 1));
 
     // Verify the written and read data are the same
     TEST_ASSERT_EQUAL(write_data, read_data);
+
+    // Erase sector and ensure it's erased
+    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS_1 / SFLASH_SECTOR_SIZE));
+    TEST_ASSERT_EQUAL(true, flash.readBuffer(TEST_ADDRESS_1, &read_data, 1));
+    TEST_ASSERT_EQUAL(0xff, read_data);
+
+    // Use a different address and data pattern
+    write_data = TEST_DATA_2;
+    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS_2 / SFLASH_SECTOR_SIZE));
+    TEST_ASSERT_EQUAL(true, flash.writeBuffer(TEST_ADDRESS_2, &write_data, 1));
+    TEST_ASSERT_EQUAL(true, flash.readBuffer(TEST_ADDRESS_2, &read_data, 1));
+    TEST_ASSERT_EQUAL(write_data, read_data);
+    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS_2 / SFLASH_SECTOR_SIZE));
+    
+    // Make sure the sector is erased
+    TEST_ASSERT_EQUAL(true, flash.readBuffer(TEST_ADDRESS_2, &read_data, 1));
+    TEST_ASSERT_EQUAL(0xff, read_data);
 }
 
 void test_data_saver_begin() {
@@ -57,9 +77,9 @@ void test_save_data_point() {
 
 void test_time_based_write() {
     uint8_t testData[TEST_BYTE_SIZE];
-    memset(testData, TEST_DATA, TEST_BYTE_SIZE); // Fill buffer with test data
+    memset(testData, TEST_DATA_1, TEST_BYTE_SIZE); // Fill buffer with test data
     unsigned long start_time = millis();
-    TEST_ASSERT_EQUAL(TEST_BYTE_SIZE, flash.writeBuffer(TEST_ADDRESS, testData, TEST_BYTE_SIZE));
+    TEST_ASSERT_EQUAL(TEST_BYTE_SIZE, flash.writeBuffer(TEST_ADDRESS_1, testData, TEST_BYTE_SIZE));
     unsigned long duration = millis() - start_time;
     Serial.printf("test_time_based_write execution time: %lu ms\n", duration);
     TEST_ASSERT_LESS_THAN(TEST_TIME_LIMIT, duration);
@@ -81,7 +101,7 @@ void test_flush_buffer_count(){
 
 void test_post_launch_mode() {
     unsigned long start_time = millis();
-    // dataSaver.eraseAllData();
+    dataSaver.clearPostLaunchMode();
 
     TEST_ASSERT_EQUAL(false, dataSaver.isPostLaunchMode());
     TEST_ASSERT_EQUAL(false, dataSaver.quickGetPostLaunchMode());
@@ -103,8 +123,8 @@ void test_erase_all_data() {
     dataSaver.saveDataPoint(dp, 1);
 
     // Also write to flash to ensure it's erased
-    uint8_t writeData = TEST_DATA;
-    flash.writeBuffer(TEST_ADDRESS, &writeData, 1);
+    uint8_t writeData = TEST_DATA_1;
+    flash.writeBuffer(TEST_ADDRESS_1, &writeData, 1);
 
     unsigned long start_time = millis();
     dataSaver.eraseAllData();
@@ -112,8 +132,8 @@ void test_erase_all_data() {
 
     // Read from flash to ensure it's erased
     uint8_t readData;
-    flash.readBuffer(TEST_ADDRESS, &readData, 1);
-    TEST_ASSERT_NOT_EQUAL(TEST_DATA, readData);
+    flash.readBuffer(TEST_ADDRESS_1, &readData, 1);
+    TEST_ASSERT_NOT_EQUAL(TEST_DATA_1, readData);
 
     // Ensure next write starts fresh
     dp.timestamp_ms = 200;
@@ -215,8 +235,10 @@ void test_data_point_byte_size_buffer_handling() {
     // However, the buffer index should now be 10
     TEST_ASSERT_EQUAL(10, dataSaver.getBufferIndex());
 
+    int max_in_buffer = dataSaver.BUFFER_SIZE / 5 * 5; // Nearest multiple of 5 less than the buffer size
+
     // To cause the buffer to flush, let's write until we almost fill it up
-    while (dataSaver.getBufferIndex() < dataSaver.BUFFER_SIZE - 5) {
+    while (dataSaver.getBufferIndex() < max_in_buffer) {
         dataSaver.saveDataPoint(dp, 1); // Adds just 5 bytes b/c the timestamp is the same
         expected_in_buffer += 5;
 
@@ -239,17 +261,75 @@ void test_data_point_byte_size_buffer_handling() {
     // Write one more data point to flush the buffer
     dataSaver.saveDataPoint(dp, 1); // Adds 5 more bytes
 
-    expected_in_buffer += 1;  // The name fits 
+    expected_in_buffer += 0;  // The name fits 
 
-    // A flush should have just happend
+    // A flush should have just happend the entire buffer size is written to flash
     TEST_ASSERT_EQUAL(1, dataSaver.getBufferFlushes());
 
-    // The name will fit in the buffer, the 4 byte value will not
-    // Therefor, the 4 bytes should be in the new buffer
-    TEST_ASSERT_EQUAL(4, dataSaver.getBufferIndex());
+    // All of this data point is forced into the next buffer
+    TEST_ASSERT_EQUAL(5, dataSaver.getBufferIndex());
 
     // Check that the nextWriteAddress has changed by the correct amount
-    TEST_ASSERT_EQUAL(expected_in_buffer, dataSaver.getNextWriteAddress() - startAddress);
+    TEST_ASSERT_EQUAL(dataSaver.BUFFER_SIZE, dataSaver.getNextWriteAddress() - startAddress);
+}
+
+void test_expected_data_on_chip_2_buf_flushes(){
+    // Write a few buffers worth of data and read the data to ensure it's all correct
+
+    // Clear the target sector
+    flash.eraseSector(DATA_START_ADDRESS / SFLASH_SECTOR_SIZE);
+
+    // First byte should be all 0xff
+    uint8_t readData;
+    TEST_ASSERT_EQUAL(true, flash.readBuffer(DATA_START_ADDRESS, &readData, 1));
+    TEST_ASSERT_EQUAL(0xff, readData);
+
+    // Reset data saver
+    dataSaver.clearInternalState();
+
+    // 51 data points fit into a buffer (5 bytes per data point = 255 bytes)
+    // Write 103 datapoints to fill 2 buffers (and flush the second one), then go through and read them all back
+    // never change the timestamp to avoid extra complexity, only the first will trigger a timestamp
+    int datapoints_per_buffer = dataSaver.BUFFER_SIZE / 5;
+    int needed_datapoints = datapoints_per_buffer * 2; // No +1 b/c first timestamp
+    for (int i = 0; i < needed_datapoints; i++) {
+        DataPoint dp = {100, static_cast<float>(i) * 10};
+        TEST_ASSERT_EQUAL(0, dataSaver.saveDataPoint(dp, i));
+    }
+
+    // Ensure that 2 flushes happended
+    TEST_ASSERT_EQUAL(2, dataSaver.getBufferFlushes());
+
+    TEST_ASSERT_EQUAL(256, SFLASH_PAGE_SIZE); // Ensure the page size is correct
+
+    uint8_t name;
+
+    // Read back the data
+    for (int page = 0; page < 2; page++) {
+        for (int i = 0; i < datapoints_per_buffer; i++) {
+            int expVal = page * datapoints_per_buffer + (i - 1); // -1 because the first one is a timestamp
+            uint32_t address = DATA_START_ADDRESS + page * SFLASH_PAGE_SIZE + i * 5;
+            TEST_ASSERT_EQUAL(1, flash.readBuffer(address, &name, 1));
+            
+            // Check that the value and name are correct
+            if (i == 0 && page == 0){
+                // timestamp
+                uint32_t timestamp;
+                TEST_ASSERT_EQUAL(4, flash.readBuffer(address + 1, reinterpret_cast<uint8_t*>(&timestamp), 4));
+                TEST_ASSERT_EQUAL(TIMESTAMP, name);
+                TEST_ASSERT_EQUAL(100, timestamp);
+            } else {
+                float value; 
+                TEST_ASSERT_EQUAL(4, flash.readBuffer(address + 1, reinterpret_cast<uint8_t*>(&value), 4));
+                // Serial.print("Does ");
+                // Serial.print(expVal);
+                // Serial.print(" == ");
+                // Serial.println(name);
+                TEST_ASSERT_EQUAL(expVal, name); // Name
+                TEST_ASSERT_EQUAL(expVal * 10, value); // Data
+            }
+        }
+    }
 }
 
 void setup() {
@@ -267,6 +347,7 @@ void setup() {
     RUN_TEST(test_data_point_byte_size_buffer_handling);
     RUN_TEST(test_flush_buffer_count);
     RUN_TEST(test_time_based_write);
+    RUN_TEST(test_expected_data_on_chip_2_buf_flushes);
     // RUN_TEST(test_erase_all_data);
     // RUN_TEST(test_post_launch_data_preservation);
     UNITY_END();

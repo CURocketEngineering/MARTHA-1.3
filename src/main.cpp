@@ -21,6 +21,7 @@
 int last_led_toggle = 0;
 int led_toggle_delay = 1000;
 float loop_count = 0;
+uint32_t start_time_s = 0;
 
 Adafruit_LSM6DSOX sox;
 Adafruit_LIS3MDL  mag;
@@ -45,6 +46,8 @@ SensorDataHandler xMagData(MAGNETOMETER_X, &dataSaver);
 SensorDataHandler yMagData(MAGNETOMETER_Y, &dataSaver);
 SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
+SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
+
 LaunchPredictor launchPredictor(30, 1000, 40);
 
 CommandLine cmdLine(&Serial);
@@ -57,6 +60,9 @@ void testCommand(queue<string> arguments, string& response);
 void ping(queue<string> arguments, string& response);
 void rfMode(CC1125 &rf);
 void printStructBytes(const DataPoints_t* data);
+void dumpFlash(queue<string> arguments, string& response);
+void clearPostLaunchMode(queue<string> arguments, string& response);
+void printStatus(queue<string> arguments, string& response);
 
 void setup() {
 
@@ -64,7 +70,7 @@ void setup() {
 
 
   Serial.begin(115200);
-  while (!Serial) delay(10); // Wait for Serial Monitor (Comment out if not using)
+  // while (!Serial) delay(10); // Wait for Serial Monitor (Comment out if not using)
 
 
   Serial.println("Setting up accelerometer and gyroscope...");
@@ -106,11 +112,11 @@ void setup() {
   mag.setOperationMode(LIS3MDL_CONTINUOUSMODE);
   mag.setPerformanceMode(LIS3MDL_MEDIUMMODE);
 
-  mag.setIntThreshold(500);
-  mag.configInterrupt(false, false, true, // enable z axis
-                          true, // polarity
-                          false, // don't latch
-                          true); // enabled!
+  // mag.setIntThreshold(500);
+  // mag.configInterrupt(false, false, true, // enable z axis
+  //                         true, // polarity
+  //                         false, // don't latch
+  //                         true); // enabled!
 
   if (mag.getDataRate() != LIS3MDL_DATARATE_155_HZ) {
     Serial.println("Failed to set Mag data rate");
@@ -125,7 +131,7 @@ void setup() {
   bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
   bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
   bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
-  bmp.setOutputDataRate(BMP3_ODR_50_HZ);
+  bmp.setOutputDataRate(BMP3_ODR_100_HZ);
 
   Serial.println("Setting up data saver...");
 
@@ -148,10 +154,24 @@ void setup() {
   Serial.println("Setup complete!");
 
   cmdLine.addCommand("test", "t", testCommand);  
-  cmdLine.addCommand("ping", "p", ping);  
-  // cmdLine.begin();
-  delay(2000);
+  cmdLine.addCommand("ping", "p", ping);    
+  cmdLine.addCommand("clear_plm", "cplm", clearPostLaunchMode);
+  cmdLine.addCommand("status", "s", printStatus);
+  cmdLine.addCommand("dump", "d", dumpFlash);
+  cmdLine.begin();
 
+
+  // Set save speeds
+  tempData.restrictSaveSpeed(1000);
+  pressureData.restrictSaveSpeed(1000);
+  xMagData.restrictSaveSpeed(1000);
+  yMagData.restrictSaveSpeed(1000);
+  zMagData.restrictSaveSpeed(1000);
+  superLoopRate.restrictSaveSpeed(1000);
+
+
+  // Loop start time
+  start_time_s = millis() / 1000;
 
 }
 
@@ -229,8 +249,10 @@ void loop() {
   // altitudeData.addData(DataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA)));
   // pressureData.addData(DataPoint(current_time, bmp.pressure));
 
-  // Serial.print("Loop time: ");
-  // Serial.println((millis() - current_time));
+  superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
+
+  // print in hz the loop rate
+  // Serial.println(loop_count / (millis() / 1000 - start_time_s));
 
   rfMode(rf);
 
@@ -332,3 +354,81 @@ void printStructBytes(const DataPoints_t* data)
     }
 }
 
+void clearPostLaunchMode(queue<string> arguments, string& response) {
+    dataSaver.clearPostLaunchMode();
+    launchPredictor.reset();
+    cmdLine.println("Cleared post launch mode, reboot the device to complete the reset.");
+}
+
+std::string floatToString(float value, int precision = 2) {
+    char buffer[20];
+    dtostrf(value, 0, precision, buffer);
+    return std::string(buffer);
+}
+
+void dumpFlash(std::queue<std::string> arguments, std::string& response) {
+    dataSaver.dumpData(Serial);
+}
+
+void printStatus(std::queue<std::string> arguments, std::string& response) {
+    cmdLine.println("--Launch Predictor--");
+    cmdLine.print("Launched: ");
+    cmdLine.println(std::to_string(launchPredictor.isLaunched()));
+    cmdLine.print("Launched Time: ");
+    cmdLine.println(floatToString(launchPredictor.getLaunchedTime()));
+    cmdLine.print("Median Acceleration Squared: ");
+    cmdLine.println(floatToString(launchPredictor.getMedianAccelerationSquared()));
+
+    cmdLine.println("");
+    cmdLine.println("--Data Saver--");
+    cmdLine.print("Post Launch Mode: ");
+    cmdLine.println(std::to_string(dataSaver.quickGetPostLaunchMode()));
+    cmdLine.print("Rebooted in Post Launch Mode (won't save): ");
+    cmdLine.println(std::to_string(dataSaver.getRebootedInPostLaunchMode()));
+    cmdLine.print("Last Timestamp: ");
+    cmdLine.println(std::to_string(dataSaver.getLastTimestamp()));
+    cmdLine.print("Last Data Point Value: ");
+    cmdLine.println(floatToString(dataSaver.getLastDataPoint().data));
+    cmdLine.print("Super loop average hz: ");
+    cmdLine.println(floatToString(loop_count / (millis() / 1000 - start_time_s)));
+
+    cmdLine.println("");
+    cmdLine.println("--Flash--");
+    cmdLine.print("Stopped writing b/c wrapped around to launch address: ");
+    cmdLine.println(std::to_string(dataSaver.getIsChipFullDueToPostLaunchProtection()));
+    cmdLine.print("Launch Write Address: ");
+    cmdLine.println(std::to_string(dataSaver.getLaunchWriteAddress()));
+    cmdLine.print("Next Write Address: ");
+    cmdLine.println(std::to_string(dataSaver.getNextWriteAddress()));
+    cmdLine.print("Buffer Index: ");
+    cmdLine.println(std::to_string(dataSaver.getBufferIndex()));
+    cmdLine.print("Buffer Flushes: ");
+    cmdLine.println(std::to_string(dataSaver.getBufferFlushes()));
+
+    cmdLine.println("");
+    cmdLine.println("--Sensors--");
+    cmdLine.print("Accelerometer X: ");
+    cmdLine.println(floatToString(xAclData.getLastDataPointSaved().data));
+    cmdLine.print("Accelerometer Y: ");
+    cmdLine.println(floatToString(yAclData.getLastDataPointSaved().data));
+    cmdLine.print("Accelerometer Z: ");
+    cmdLine.println(floatToString(zAclData.getLastDataPointSaved().data));
+    cmdLine.print("Gyroscope X: ");
+    cmdLine.println(floatToString(xGyroData.getLastDataPointSaved().data));
+    cmdLine.print("Gyroscope Y: ");
+    cmdLine.println(floatToString(yGyroData.getLastDataPointSaved().data));
+    cmdLine.print("Gyroscope Z: ");
+    cmdLine.println(floatToString(zGyroData.getLastDataPointSaved().data));
+    cmdLine.print("Temperature: ");
+    cmdLine.println(floatToString(tempData.getLastDataPointSaved().data));
+    cmdLine.print("Pressure: ");
+    cmdLine.println(floatToString(pressureData.getLastDataPointSaved().data));
+    cmdLine.print("Altitude: ");
+    cmdLine.println(floatToString(altitudeData.getLastDataPointSaved().data));
+    cmdLine.print("Magnetometer X: ");
+    cmdLine.println(floatToString(xMagData.getLastDataPointSaved().data));
+    cmdLine.print("Magnetometer Y: ");
+    cmdLine.println(floatToString(yMagData.getLastDataPointSaved().data));
+    cmdLine.print("Magnetometer Z: ");
+    cmdLine.println(floatToString(zMagData.getLastDataPointSaved().data));
+}
