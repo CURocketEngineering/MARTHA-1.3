@@ -2,7 +2,6 @@
 
 #include "Adafruit_LSM6DSOX.h"
 #include "Adafruit_LIS3MDL.h"
-#include "FlashDriver.h"
 #include "CC1125.h"
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP3XX.h>
@@ -58,7 +57,7 @@ CommandLine cmdLine(&Serial);
 
 void testCommand(queue<string> arguments, string& response);
 void ping(queue<string> arguments, string& response);
-void rfMode(CC1125 &rf);
+void rfMode();
 void printStructBytes(const DataPoints_t* data);
 void dumpFlash(queue<string> arguments, string& response);
 void clearPostLaunchMode(queue<string> arguments, string& response);
@@ -137,7 +136,6 @@ void setup() {
 
   // Initalize data saver
   if (!dataSaver.begin()) {
-    flash.eraseChip();
     Serial.println("Failed to initialize data saver");
   }
 
@@ -177,7 +175,7 @@ void setup() {
 
 void loop() {
 
-  // cmdLine.readInput();
+  cmdLine.readInput();
 
   loop_count += 1;
 
@@ -187,7 +185,7 @@ void loop() {
     digitalWrite(DEBUG_LED, !digitalRead(DEBUG_LED));
   }
 
-  // Serial.write("Reading sensors...\n");
+  DEBUG_PRINT("Reading sensors...\n");
 
   sensors_event_t accel;
   sensors_event_t gyro;
@@ -196,65 +194,65 @@ void loop() {
 
   mag.getEvent(&mag_event);
 
-  // xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
-  // yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
-  // zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
+  xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
+  yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
+  zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
 
   sox.getEvent(&accel, &gyro, &temp);
 
-  // Serial.write("ACL X: ");
-  // Serial.println(accel.acceleration.x);
-  // Serial.write("GYRO X: ");
-  // Serial.println(gyro.gyro.x);
-  // Serial.write("TEMP: ");
-  // Serial.println(temp.temperature);
-  // Serial.write("MAG X: ");
-  // Serial.println(mag_event.magnetic.x);
-  // Serial.write("Altitude: ");
-  // Serial.println(bmp.readAltitude(SEALEVELPRESSURE_HPA));
+  DEBUG_PRINT("ACL X: ");
+  DEBUG_PRINTLN(accel.acceleration.x);
+  DEBUG_PRINT("GYRO X: ");
+  DEBUG_PRINTLN(gyro.gyro.x);
+  DEBUG_PRINT("TEMP: ");
+  DEBUG_PRINTLN(temp.temperature);
+  DEBUG_PRINT("MAG X: ");
+  DEBUG_PRINTLN(mag_event.magnetic.x);
+  DEBUG_PRINT("Altitude: ");
+  DEBUG_PRINTLN(bmp.readAltitude(SEALEVELPRESSURE_HPA));
 
-  // xAclData.addData(DataPoint(current_time, accel.acceleration.x));
-  // yAclData.addData(DataPoint(current_time, accel.acceleration.y));
-  // zAclData.addData(DataPoint(current_time, accel.acceleration.z));
+  xAclData.addData(DataPoint(current_time, accel.acceleration.x));
+  yAclData.addData(DataPoint(current_time, accel.acceleration.y));
+  zAclData.addData(DataPoint(current_time, accel.acceleration.z));
 
   launchPredictor.update(DataPoint(current_time, accel.acceleration.x),
                          DataPoint(current_time, accel.acceleration.y),
                          DataPoint(current_time, accel.acceleration.z));
 
   // Blink fast if in post launch mode (DO NOT LAUNCH)
-  // if (dataSaver.quickGetPostLaunchMode()) {
-  //   led_toggle_delay = 100;
-  // } else {
-  //   // If launch detected, put the dataSaver into post launch mode
-  //   // i.e. all the data written from this point on is sacred and will not be overwritten
-  //   if (launchPredictor.isLaunched()){
-  //     Serial.println("Launch detected!");
-  //     dataSaver.launchDetected(launchPredictor.getLaunchedTime());
-  //   }
-  // }
+  if (dataSaver.quickGetPostLaunchMode()) {
+    led_toggle_delay = 100;
+  } else {
+    // If launch detected, put the dataSaver into post launch mode
+    // i.e. all the data written from this point on is sacred and will not be overwritten
+    if (launchPredictor.isLaunched()){
+      Serial.println("Launch detected!");
+      dataSaver.launchDetected(launchPredictor.getLaunchedTime());
+    }
+  }
 
-  // Serial.println(launchPredictor.getMedianAccelerationSquared());
+  DEBUG_PRINTLN(launchPredictor.getMedianAccelerationSquared());
 
-  // xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
-  // yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
-  // zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
+  xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
+  yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
+  zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
 
-  // tempData.addData(DataPoint(current_time, temp.temperature));
+  tempData.addData(DataPoint(current_time, temp.temperature));
 
   if (! bmp.performReading()) {
-    Serial.println("Failed to perform reading :(");
+    DEBUG_PRINTLN("Failed to perform reading :(");
     return;
   }
 
-  // altitudeData.addData(DataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA)));
-  // pressureData.addData(DataPoint(current_time, bmp.pressure));
+  altitudeData.addData(DataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA)));
+  pressureData.addData(DataPoint(current_time, bmp.pressure));
 
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
 
   // print in hz the loop rate
-  // Serial.println(loop_count / (millis() / 1000 - start_time_s));
+  DEBUG_PRINTLN(loop_count / (millis() / 1000 - start_time_s));
 
-  rfMode(rf);
+  rfMode();
 
 }
 
@@ -290,7 +288,7 @@ void ping(queue<string> arguments, string& response) {
 }
 
 
-void rfMode(CC1125 &rf)
+void rfMode()
 {
   #ifdef MASON_MARTHA_PCB
     DataPoints_t *data = (DataPoints_t*)malloc(sizeof(DataPoints_t));
@@ -328,7 +326,7 @@ void rfMode(CC1125 &rf)
     #endif
     free(data);
   #else
-    Serial.println("Not supported on this board");
+      //DEBUG_PRINTLN("Not supported on this board");
   #endif
   
 }
