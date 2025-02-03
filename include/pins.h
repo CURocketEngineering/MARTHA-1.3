@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 
+
 #ifdef PCB_MARTHA
 
 #define SENSOR_MISO PA6 
@@ -21,8 +22,15 @@
 #endif // PCB_MARTHA
 
 #ifdef MASON_MARTHA_PCB
-  HardwareSerial SUART1(PB7, PB6); // RX TX
-  #define Serial SUART1
+  #include "CC1125.h"
+  #ifdef UART_TRANSMIT
+    extern HardwareSerial SUART1; // RX TX
+    #undef Serial
+    #define Serial SUART1
+  #endif
+  
+  #define CC1125_RESET    PB15
+  #define CC1125_CS       PB12
 #endif
 
 #ifdef BB_MARTHA
@@ -33,10 +41,19 @@
 #define SENSOR_BARO_CS PA1
 #define SENSOR_LSM_CS PA0
 #define SENSOR_LIS_CS PA3
-#define FLASH_CS PB1
 #define DEBUG_LED PA9
 
+#define EXTERNAL_FLASH_USE_CS PB1
+#define EXTERNAL_FLASH_USE_SPI SPI
 #endif // BB_MARTHA pins 
+
+#if DEBUG
+  #define DEBUG_PRINTLN(x) Serial.println(x)
+  #define DEBUG_PRINT(x) Serial.print(x)
+#else
+  #define DEBUG_PRINTLN(x)
+  #define DEBUG_PRINT(x)
+#endif
  
 
 #endif 

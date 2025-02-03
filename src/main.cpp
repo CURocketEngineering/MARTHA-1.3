@@ -2,7 +2,6 @@
 
 #include "Adafruit_LSM6DSOX.h"
 #include "Adafruit_LIS3MDL.h"
-#include "FlashDriver.h"
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP3XX.h>
 #include "pins.h"
@@ -13,6 +12,9 @@
 #include "data_handling/DataNames.h"
 #include "flash_config.h"
 #include "data_handling/LaunchPredictor.h"
+
+#include <IWatchdog.h>// mbed library for STM32
+
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 
@@ -51,8 +53,16 @@ LaunchPredictor launchPredictor(30, 1000, 40);
 
 CommandLine cmdLine(&Serial);
 
+#ifdef MASON_MARTHA_PCB
+  #ifdef UART_TRANSMIT
+    HardwareSerial SUART1(PB7, PB6); // RX TX
+  #endif
+  CC1125 rf(CC1125_RESET, CC1125_CS, &sox, &mag, &bmp);
+#endif
+
 void testCommand(queue<string> arguments, string& response);
 void ping(queue<string> arguments, string& response);
+void rfMode();
 void dumpFlash(queue<string> arguments, string& response);
 void clearPostLaunchMode(queue<string> arguments, string& response);
 void printStatus(queue<string> arguments, string& response);
@@ -133,6 +143,18 @@ void setup() {
     Serial.println("Failed to initialize data saver");
   }
 
+  #ifdef MASON_MARTHA_PCB
+  CC1125Status status;
+  status = rf.init();
+  if(status != CC1125_SUCCESS)
+    Serial.println("Failed to initialize CC1125");
+  else
+    Serial.println("Initialize CC1125");
+  #endif
+
+  IWatchdog.begin(4000000);
+
+
   Serial.println("Setup complete!");
 
   cmdLine.addCommand("test", "t", testCommand);  
@@ -159,6 +181,8 @@ void setup() {
 
 void loop() {
 
+  IWatchdog.reload();
+
   cmdLine.readInput();
 
   loop_count += 1;
@@ -169,7 +193,7 @@ void loop() {
     digitalWrite(DEBUG_LED, !digitalRead(DEBUG_LED));
   }
 
-  // Serial.write("Reading sensors...\n");
+  DEBUG_PRINT("Reading sensors...\n");
 
   sensors_event_t accel;
   sensors_event_t gyro;
@@ -184,16 +208,16 @@ void loop() {
 
   sox.getEvent(&accel, &gyro, &temp);
 
-  // Serial.write("ACL X: ");
-  // Serial.println(accel.acceleration.x);
-  // Serial.write("GYRO X: ");
-  // Serial.println(gyro.gyro.x);
-  // Serial.write("TEMP: ");
-  // Serial.println(temp.temperature);
-  // Serial.write("MAG X: ");
-  // Serial.println(mag_event.magnetic.x);
-  // Serial.write("Altitude: ");
-  // Serial.println(bmp.readAltitude(SEALEVELPRESSURE_HPA));
+  DEBUG_PRINT("ACL X: ");
+  DEBUG_PRINTLN(accel.acceleration.x);
+  DEBUG_PRINT("GYRO X: ");
+  DEBUG_PRINTLN(gyro.gyro.x);
+  DEBUG_PRINT("TEMP: ");
+  DEBUG_PRINTLN(temp.temperature);
+  DEBUG_PRINT("MAG X: ");
+  DEBUG_PRINTLN(mag_event.magnetic.x);
+  DEBUG_PRINT("Altitude: ");
+  DEBUG_PRINTLN(bmp.readAltitude(SEALEVELPRESSURE_HPA));
 
   xAclData.addData(DataPoint(current_time, accel.acceleration.x));
   yAclData.addData(DataPoint(current_time, accel.acceleration.y));
@@ -215,7 +239,7 @@ void loop() {
     }
   }
 
-  // Serial.println(launchPredictor.getMedianAccelerationSquared());
+  DEBUG_PRINTLN(launchPredictor.getMedianAccelerationSquared());
 
   xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
   yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
@@ -224,7 +248,7 @@ void loop() {
   tempData.addData(DataPoint(current_time, temp.temperature));
 
   if (! bmp.performReading()) {
-    Serial.println("Failed to perform reading :(");
+    DEBUG_PRINTLN("Failed to perform reading :(");
     return;
   }
 
@@ -234,7 +258,9 @@ void loop() {
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
 
   // print in hz the loop rate
-  // Serial.println(loop_count / (millis() / 1000 - start_time_s));
+  DEBUG_PRINTLN(loop_count / (millis() / 1000 - start_time_s));
+
+  rfMode();
 
 }
 
@@ -267,6 +293,49 @@ void testCommand(std::queue<std::string> arguments, std::string& response) {
 
 void ping(queue<string> arguments, string& response) {
     cmdLine.println("Pinged the microntroller ");
+}
+
+
+void rfMode()
+{
+  #ifdef MASON_MARTHA_PCB
+    DataPoints_t *data = (DataPoints_t*)malloc(sizeof(DataPoints_t));
+    memset(data, 0, sizeof(DataPoints_t));
+    #ifdef RF_RX
+      uint8_t received[0x80] = {0};
+      rf.runRX(received);
+      
+      memcpy(data, &received[1], sizeof(DataPoints_t));
+
+      Serial.print("BMP390 DATA:\r\n");
+      Serial.print("Pressure: "); Serial.print(data->altitude); Serial.print(" Pa\t");
+      Serial.print("Altitude: "); Serial.print(data->pressure); Serial.println(" m\n");
+      Serial.print("Temperature: "); Serial.print(data->temp_bmp); Serial.println(" d/s\n");
+
+      Serial.print("LSM6DSOX DATA:\r\n");
+      Serial.print("X: "); Serial.print(data->acceleration_x); Serial.print(" m/s^2\t");
+      Serial.print("Y: "); Serial.print(data->acceleration_y); Serial.print(" m/s^2\t");
+      Serial.print("Z: "); Serial.print(data->acceleration_z); Serial.println(" m/s^2");
+      Serial.print("X: "); Serial.print(data->gyro_x); Serial.print(" d/s\t");
+      Serial.print("Y: "); Serial.print(data->gyro_y); Serial.print(" d/s\t");
+      Serial.print("Z: "); Serial.print(data->gyro_z); Serial.println(" d/s\n");
+
+      Serial.print("LIS3MDL DATA:\r\n");
+      Serial.print("X: "); Serial.print(data->magnetic_x); Serial.print(" µT\t");
+      Serial.print("Y: "); Serial.print(data->magnetic_y); Serial.print(" µT\t");
+      Serial.print("Z: "); Serial.print(data->magnetic_z); Serial.println(" µT\n");  
+    #elif defined(RF_TX)
+      rf.retriveData(data); // Populate data
+      rf.runTX(reinterpret_cast<uint8_t*>(data), sizeof(DataPoints_t));
+    #else
+      // Default case or fallback code
+      Serial.println("No RF mode defined. Check configuration.");
+    #endif
+    free(data);
+  #else
+      //DEBUG_PRINTLN("Not supported on this board");
+  #endif
+  
 }
 
 void clearPostLaunchMode(queue<string> arguments, string& response) {
