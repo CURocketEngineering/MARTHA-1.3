@@ -31,6 +31,9 @@
 #define FLASH_CS PB1
 #define DEBUG_LED PA9
 
+#define EXTERNAL_FLASH_USE_CS PB1
+#define EXTERNAL_FLASH_USE_SPI SPI
+
 #endif // BB_MARTHA pins 
  
 
