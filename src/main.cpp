@@ -2,7 +2,6 @@
 
 #include "Adafruit_LSM6DSOX.h"
 #include "Adafruit_LIS3MDL.h"
-#include "CC1125.h"
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP3XX.h>
 #include "pins.h"
@@ -52,13 +51,15 @@ LaunchPredictor launchPredictor(30, 1000, 40);
 CommandLine cmdLine(&Serial);
 
 #ifdef MASON_MARTHA_PCB
+  #ifdef UART_TRANSMIT
+    HardwareSerial SUART1(PB7, PB6); // RX TX
+  #endif
   CC1125 rf(CC1125_RESET, CC1125_CS, &sox, &mag, &bmp);
 #endif
 
 void testCommand(queue<string> arguments, string& response);
 void ping(queue<string> arguments, string& response);
 void rfMode();
-void printStructBytes(const DataPoints_t* data);
 void dumpFlash(queue<string> arguments, string& response);
 void clearPostLaunchMode(queue<string> arguments, string& response);
 void printStatus(queue<string> arguments, string& response);
@@ -297,7 +298,7 @@ void rfMode()
       uint8_t received[0x80] = {0};
       rf.runRX(received);
       
-      //memcpy(&data, received, sizeof(DataPoints_t));
+      memcpy(data, &received[1], sizeof(DataPoints_t));
 
       Serial.print("BMP390 DATA:\r\n");
       Serial.print("Pressure: "); Serial.print(data->altitude); Serial.print(" Pa\t");
@@ -319,7 +320,6 @@ void rfMode()
     #elif defined(RF_TX)
       rf.retriveData(data); // Populate data
       rf.runTX(reinterpret_cast<uint8_t*>(data), sizeof(DataPoints_t));
-      printStructBytes(data);
     #else
       // Default case or fallback code
       Serial.println("No RF mode defined. Check configuration.");
@@ -329,27 +329,6 @@ void rfMode()
       //DEBUG_PRINTLN("Not supported on this board");
   #endif
   
-}
-
-void printStructBytes(const DataPoints_t* data)
-{
-    // Cast the struct pointer to a uint8_t pointer (byte pointer)
-    uint8_t* bytePtr = (uint8_t*)data;
-
-    // Print each byte in hexadecimal format
-    size_t structSize = sizeof(DataPoints_t);
-    for (size_t i = 0; i < structSize; i++)
-    {
-        // Print each byte in the format "Byte 0: 0xXX"
-        Serial.print("Byte ");
-        Serial.print(i);
-        Serial.print(": 0x");
-        if (bytePtr[i] < 0x10) {
-            Serial.print("0"); // Print leading zero for single-digit hex values
-        }
-        Serial.print(bytePtr[i], HEX);
-        Serial.println(); // Move to the next line after each byte
-    }
 }
 
 void clearPostLaunchMode(queue<string> arguments, string& response) {

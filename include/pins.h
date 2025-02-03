@@ -3,13 +3,6 @@
 
 #include <Arduino.h>
 
-#if DEBUG
-  #define DEBUG_PRINTLN(x) Serial.println(x)
-  #define DEBUG_PRINT(x) Serial.print(x)
-#else
-  #define DEBUG_PRINTLN(x)
-  #define DEBUG_PRINT(x)
-#endif
 
 #ifdef PCB_MARTHA
 
@@ -29,8 +22,10 @@
 #endif // PCB_MARTHA
 
 #ifdef MASON_MARTHA_PCB
+  #include "CC1125.h"
   #ifdef UART_TRANSMIT
-    HardwareSerial SUART1(PB7, PB6); // RX TX
+    extern HardwareSerial SUART1; // RX TX
+    #undef Serial
     #define Serial SUART1
   #endif
   
@@ -51,6 +46,14 @@
 #define EXTERNAL_FLASH_USE_CS PB1
 #define EXTERNAL_FLASH_USE_SPI SPI
 #endif // BB_MARTHA pins 
+
+#if DEBUG
+  #define DEBUG_PRINTLN(x) Serial.println(x)
+  #define DEBUG_PRINT(x) Serial.print(x)
+#else
+  #define DEBUG_PRINTLN(x)
+  #define DEBUG_PRINT(x)
+#endif
  
 
 #endif 
