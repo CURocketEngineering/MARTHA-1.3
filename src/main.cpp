@@ -13,6 +13,9 @@
 #include "flash_config.h"
 #include "data_handling/LaunchPredictor.h"
 
+#include <IWatchdog.h>// mbed library for STM32
+
+
 #define SEALEVELPRESSURE_HPA (1013.25)
 
 
@@ -149,6 +152,8 @@ void setup() {
     Serial.println("Initialize CC1125");
   #endif
 
+  IWatchdog.begin(4000000);
+
 
   Serial.println("Setup complete!");
 
@@ -175,6 +180,8 @@ void setup() {
 }
 
 void loop() {
+
+  IWatchdog.reload();
 
   cmdLine.readInput();
 
