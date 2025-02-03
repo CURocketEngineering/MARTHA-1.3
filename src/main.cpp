@@ -4,7 +4,7 @@
 #include "Adafruit_LIS3MDL.h"
 #include "FlashDriver.h"
 #include <Adafruit_Sensor.h>
-#include <Adafruit_BMP3XX.h>
+#include <Async_BMP3XX.h>
 #include "pins.h"
 #include "UARTCommandHandler.h"
 
@@ -51,7 +51,7 @@ SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
 SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
 
-LaunchPredictor launchPredictor(30, 1000, 40);
+LaunchPredictor launchPredictor(40, 500, 25);
 ApogeeDetector apogeeDetector(0.25f, 1.0f, 2.0f);
 StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector);
 
@@ -132,6 +132,9 @@ void setup() {
   bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
   bmp.setOutputDataRate(BMP3_ODR_100_HZ);
 
+  bmp.setConversionDelay(10); // 10 ms == 100 Hz
+  bmp.startConversion(); // Start the first conversion
+
   Serial.println("Setting up data saver...");
 
   // Initalize data saver
@@ -156,6 +159,7 @@ void setup() {
   yMagData.restrictSaveSpeed(1000);
   zMagData.restrictSaveSpeed(1000);
   superLoopRate.restrictSaveSpeed(1000);
+  altitudeData.restrictSaveSpeed(10); // Save altitude every 10 ms (100hz)
 
 
   // Loop start time
@@ -174,8 +178,6 @@ void loop() {
     last_led_toggle = millis();
     digitalWrite(DEBUG_LED, !digitalRead(DEBUG_LED));
   }
-
-  // Serial.write("Reading sensors...\n");
 
   sensors_event_t accel;
   sensors_event_t gyro;
@@ -198,10 +200,21 @@ void loop() {
   yAclData.addData(yAclDataPoint);
   zAclData.addData(zAclDataPoint);
 
-  DataPoint altDataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA));
+  DataPoint altDataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA)); // Causes pressure and temp to also get updated
 
-  altitudeData.addData(altDataPoint);
-
+  // Check periodically if a new reading is available
+  if (bmp.updateConversion()) {
+    float temp = bmp.getTemperature();
+    float pres = bmp.getPressure();
+    float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
+    
+    tempData.addData(DataPoint(current_time, temp));
+    pressureData.addData(DataPoint(current_time, pres));
+    altitudeData.addData(DataPoint(current_time, alt));
+    
+    // Immediately start the next conversion
+    bmp.startConversion();
+  }
 
   // Will update the launch predictor and apogee detector
   // Will log updates to the data saver
@@ -219,26 +232,11 @@ void loop() {
     led_toggle_delay = 100;
   }
 
-  // Serial.println(launchPredictor.getMedianAccelerationSquared());
-
   xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
   yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
   zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
 
-  tempData.addData(DataPoint(current_time, temp.temperature));
-
-  if (! bmp.performReading()) {
-    Serial.println("Failed to perform reading :(");
-    return;
-  }
-
-  
-  pressureData.addData(DataPoint(current_time, bmp.pressure));
-
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
-
-  // print in hz the loop rate
-  // Serial.println(loop_count / (millis() / 1000 - start_time_s));
 
 }
 
