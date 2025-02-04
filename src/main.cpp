@@ -50,6 +50,8 @@ SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
 SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
+SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
+float flightID;
 
 LaunchPredictor launchPredictor(40, 500, 25);
 ApogeeDetector apogeeDetector(0.25f, 1.0f, 2.0f);
@@ -160,10 +162,17 @@ void setup() {
   zMagData.restrictSaveSpeed(1000);
   superLoopRate.restrictSaveSpeed(1000);
   altitudeData.restrictSaveSpeed(10); // Save altitude every 10 ms (100hz)
+  flightIDSaver.restrictSaveSpeed(10000);
 
 
   // Loop start time
   start_time_s = millis() / 1000;
+
+  // Seed the random number generator
+  randomSeed(analogRead(0));
+
+  // Set the flight ID
+  flightID = random(100000, 999999);
 
 }
 
@@ -178,6 +187,11 @@ void loop() {
     last_led_toggle = millis();
     digitalWrite(DEBUG_LED, !digitalRead(DEBUG_LED));
   }
+
+  // Explicitly save a timestamp to ensure that all data from this loop is associated with the same timestamp and distinct from the previous loop
+  dataSaver.saveTimestamp(current_time, TIMESTAMP);
+
+  flightIDSaver.addData(DataPoint(current_time, flightID));
 
   sensors_event_t accel;
   sensors_event_t gyro;
@@ -284,7 +298,17 @@ std::string floatToString(float value, int precision = 2) {
 }
 
 void dumpFlash(std::queue<std::string> arguments, std::string& response) {
-    dataSaver.dumpData(Serial);
+    // check for -a in arg
+    if (arguments.empty()) {
+        dataSaver.dumpData(Serial, false);
+        return;
+    } else if (arguments.front() == "-a") {
+        arguments.pop();
+        dataSaver.dumpData(Serial, true);
+        return;
+    } else {
+      cmdLine.println("Invalid argument. Use -a to ignore empty pages.");
+    }
 }
 
 void printStatus(std::queue<std::string> arguments, std::string& response) {
