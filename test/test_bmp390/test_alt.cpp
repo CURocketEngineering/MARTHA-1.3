@@ -37,6 +37,42 @@ void test_altimeter_reading() {
     TEST_ASSERT_FLOAT_WITHIN(100.0, 200.0, altitude);
 }
 
+void test_async_and_sync_give_same_values(){
+    float altitude_sync = 0.0;
+    float altitude_async = 0.0;
+
+    bmp.setConversionDelay(10); // 10 ms == 100 Hz
+    bmp.startConversion(); // Start the first conversion
+
+    // Collect the first conversion value
+    delay(15);
+    TEST_ASSERT_TRUE(bmp.updateConversion());
+    altitude_async = 44330.0 * (1.0 - pow(bmp.getPressure() / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
+    altitude_sync = bmp.readAltitude(SEALEVELPRESSURE_HPA);
+
+    TEST_ASSERT_FLOAT_WITHIN(0.00001, altitude_sync, altitude_async);
+
+}
+
+void test_async_integrity(){
+    bmp.setConversionDelay(10); // 10 ms == 100 Hz
+    bmp.startConversion(); // Start the first conversion
+
+    // Collect the first conversion value
+    delay(15);
+    TEST_ASSERT_TRUE(bmp.updateConversion());
+    float altitude_async = 44330.0 * (1.0 - pow(bmp.getPressure() / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
+
+    // Collect the second conversion value
+    delay(15);
+    TEST_ASSERT_TRUE(bmp.updateConversion());
+    float altitude_async2 = 44330.0 * (1.0 - pow(bmp.getPressure() / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
+
+    // Check that the two values are not the same but are within a reasonable range
+    TEST_ASSERT_NOT_EQUAL(altitude_async, altitude_async2);
+    TEST_ASSERT_FLOAT_WITHIN(10.0, altitude_async, altitude_async2);
+}
+
 void setup() {
     Serial.begin(115200);
     while (!Serial) {
@@ -49,6 +85,8 @@ void setup() {
 
     // Run the test
     RUN_TEST(test_altimeter_reading);
+    RUN_TEST(test_async_and_sync_give_same_values);
+    RUN_TEST(test_async_integrity);
 
     UNITY_END();
 }
