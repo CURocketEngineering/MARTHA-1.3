@@ -43,6 +43,7 @@ SensorDataHandler zGyroData(GYROSCOPE_Z, &dataSaver);
 SensorDataHandler tempData(TEMPERATURE, &dataSaver);
 SensorDataHandler pressureData(PRESSURE, &dataSaver);
 SensorDataHandler altitudeData(ALTITUDE, &dataSaver);
+DataPoint altDataPoint;
 
 SensorDataHandler xMagData(MAGNETOMETER_X, &dataSaver);
 SensorDataHandler yMagData(MAGNETOMETER_Y, &dataSaver);
@@ -214,7 +215,7 @@ void loop() {
   yAclData.addData(yAclDataPoint);
   zAclData.addData(zAclDataPoint);
 
-  DataPoint altDataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA)); // Causes pressure and temp to also get updated
+  
 
   // Check periodically if a new reading is available
   if (bmp.updateConversion()) {
@@ -224,7 +225,9 @@ void loop() {
     
     tempData.addData(DataPoint(current_time, temp));
     pressureData.addData(DataPoint(current_time, pres));
-    altitudeData.addData(DataPoint(current_time, alt));
+    altDataPoint.data = alt;
+    altDataPoint.timestamp_ms = current_time;
+    altitudeData.addData(altDataPoint);
     
     // Immediately start the next conversion
     bmp.startConversion();
@@ -233,6 +236,7 @@ void loop() {
   // Will update the launch predictor and apogee detector
   // Will log updates to the data saver
   // Will put the data saver in post-launch mode if the launch predictor detects a launch
+  // Serial.println("State machine update with alt of " + String(altDataPoint.data));
   stateMachine.update(
     xAclDataPoint,
     yAclDataPoint,
@@ -251,6 +255,12 @@ void loop() {
   zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
 
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
+
+  // Throttle to 100 Hz
+  int too_fast = millis() - current_time;  // current_time was captured at the start of the loop
+  if (too_fast < 10) {
+    delay(10 - too_fast);
+  }
 
 }
 
@@ -390,3 +400,4 @@ void printStatus(std::queue<std::string> arguments, std::string& response) {
     cmdLine.print("Magnetometer Z: ");
     cmdLine.println(floatToString(zMagData.getLastDataPointSaved().data));
 }
+
