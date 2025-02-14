@@ -20,11 +20,6 @@
 
 #endif // PCB_MARTHA
 
-#ifdef MASON_MARTHA_PCB
-  HardwareSerial SUART1(PB7, PB6); // RX TX
-  #define Serial SUART1
-#endif
-
 #ifdef BB_MARTHA
 
 #define SENSOR_MISO PB4 
@@ -35,6 +30,9 @@
 #define SENSOR_LIS_CS PA3
 #define FLASH_CS PB1
 #define DEBUG_LED PA9
+
+#define EXTERNAL_FLASH_USE_CS PB1
+#define EXTERNAL_FLASH_USE_SPI SPI
 
 #endif // BB_MARTHA pins 
  
