@@ -4,7 +4,7 @@
 #include "Adafruit_LIS3MDL.h"
 #include "FlashDriver.h"
 #include <Adafruit_Sensor.h>
-#include <Adafruit_BMP3XX.h>
+#include <Async_BMP3XX.h>
 #include "pins.h"
 #include "UARTCommandHandler.h"
 
@@ -12,7 +12,10 @@
 #include "data_handling/DataSaverSPI.h"
 #include "data_handling/DataNames.h"
 #include "flash_config.h"
-#include "data_handling/LaunchPredictor.h"
+#include "state_estimation/LaunchPredictor.h"
+#include "state_estimation/ApogeeDetector.h"
+#include "state_estimation/States.h"
+#include "state_estimation/StateMachine.h"
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 
@@ -40,14 +43,20 @@ SensorDataHandler zGyroData(GYROSCOPE_Z, &dataSaver);
 SensorDataHandler tempData(TEMPERATURE, &dataSaver);
 SensorDataHandler pressureData(PRESSURE, &dataSaver);
 SensorDataHandler altitudeData(ALTITUDE, &dataSaver);
+DataPoint altDataPoint;
 
 SensorDataHandler xMagData(MAGNETOMETER_X, &dataSaver);
 SensorDataHandler yMagData(MAGNETOMETER_Y, &dataSaver);
 SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
+SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
+SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
+float flightID;
 
-LaunchPredictor launchPredictor(30, 1000, 40);
+LaunchPredictor launchPredictor(40, 500, 25);
+ApogeeDetector apogeeDetector(0.25f, 1.0f, 2.0f);
+StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector);
 
 CommandLine cmdLine(&Serial);
 
@@ -126,6 +135,9 @@ void setup() {
   bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
   bmp.setOutputDataRate(BMP3_ODR_100_HZ);
 
+  bmp.setConversionDelay(10); // 10 ms == 100 Hz
+  bmp.startConversion(); // Start the first conversion
+
   Serial.println("Setting up data saver...");
 
   // Initalize data saver
@@ -150,10 +162,18 @@ void setup() {
   yMagData.restrictSaveSpeed(1000);
   zMagData.restrictSaveSpeed(1000);
   superLoopRate.restrictSaveSpeed(1000);
+  altitudeData.restrictSaveSpeed(10); // Save altitude every 10 ms (100hz)
+  flightIDSaver.restrictSaveSpeed(10000);
 
 
   // Loop start time
   start_time_s = millis() / 1000;
+
+  // Seed the random number generator
+  randomSeed(analogRead(0));
+
+  // Set the flight ID
+  flightID = random(100000, 999999);
 
 }
 
@@ -169,7 +189,10 @@ void loop() {
     digitalWrite(DEBUG_LED, !digitalRead(DEBUG_LED));
   }
 
-  // Serial.write("Reading sensors...\n");
+  // Explicitly save a timestamp to ensure that all data from this loop is associated with the same timestamp and distinct from the previous loop
+  dataSaver.saveTimestamp(current_time, TIMESTAMP);
+
+  flightIDSaver.addData(DataPoint(current_time, flightID));
 
   sensors_event_t accel;
   sensors_event_t gyro;
@@ -184,57 +207,60 @@ void loop() {
 
   sox.getEvent(&accel, &gyro, &temp);
 
-  // Serial.write("ACL X: ");
-  // Serial.println(accel.acceleration.x);
-  // Serial.write("GYRO X: ");
-  // Serial.println(gyro.gyro.x);
-  // Serial.write("TEMP: ");
-  // Serial.println(temp.temperature);
-  // Serial.write("MAG X: ");
-  // Serial.println(mag_event.magnetic.x);
-  // Serial.write("Altitude: ");
-  // Serial.println(bmp.readAltitude(SEALEVELPRESSURE_HPA));
+  DataPoint xAclDataPoint(current_time, accel.acceleration.x);
+  DataPoint yAclDataPoint(current_time, accel.acceleration.y);
+  DataPoint zAclDataPoint(current_time, accel.acceleration.z);
 
-  xAclData.addData(DataPoint(current_time, accel.acceleration.x));
-  yAclData.addData(DataPoint(current_time, accel.acceleration.y));
-  zAclData.addData(DataPoint(current_time, accel.acceleration.z));
+  xAclData.addData(xAclDataPoint);
+  yAclData.addData(yAclDataPoint);
+  zAclData.addData(zAclDataPoint);
 
-  launchPredictor.update(DataPoint(current_time, accel.acceleration.x),
-                         DataPoint(current_time, accel.acceleration.y),
-                         DataPoint(current_time, accel.acceleration.z));
+  
 
-  // Blink fast if in post launch mode (DO NOT LAUNCH)
-  if (dataSaver.quickGetPostLaunchMode()) {
-    led_toggle_delay = 100;
-  } else {
-    // If launch detected, put the dataSaver into post launch mode
-    // i.e. all the data written from this point on is sacred and will not be overwritten
-    if (launchPredictor.isLaunched()){
-      Serial.println("Launch detected!");
-      dataSaver.launchDetected(launchPredictor.getLaunchedTime());
-    }
+  // Check periodically if a new reading is available
+  if (bmp.updateConversion()) {
+    float temp = bmp.getTemperature();
+    float pres = bmp.getPressure();
+    float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
+    
+    tempData.addData(DataPoint(current_time, temp));
+    pressureData.addData(DataPoint(current_time, pres));
+    altDataPoint.data = alt;
+    altDataPoint.timestamp_ms = current_time;
+    altitudeData.addData(altDataPoint);
+    
+    // Immediately start the next conversion
+    bmp.startConversion();
   }
 
-  // Serial.println(launchPredictor.getMedianAccelerationSquared());
+  // Will update the launch predictor and apogee detector
+  // Will log updates to the data saver
+  // Will put the data saver in post-launch mode if the launch predictor detects a launch
+  // Serial.println("State machine update with alt of " + String(altDataPoint.data));
+  stateMachine.update(
+    xAclDataPoint,
+    yAclDataPoint,
+    zAclDataPoint,
+    altDataPoint
+  );
+
+  if (stateMachine.getState() > STATE_ASCENT) {
+    led_toggle_delay = 50;
+  } else if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
+    led_toggle_delay = 100;
+  }
 
   xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
   yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
   zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
 
-  tempData.addData(DataPoint(current_time, temp.temperature));
-
-  if (! bmp.performReading()) {
-    Serial.println("Failed to perform reading :(");
-    return;
-  }
-
-  altitudeData.addData(DataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA)));
-  pressureData.addData(DataPoint(current_time, bmp.pressure));
-
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
 
-  // print in hz the loop rate
-  // Serial.println(loop_count / (millis() / 1000 - start_time_s));
+  // Throttle to 100 Hz
+  int too_fast = millis() - current_time;  // current_time was captured at the start of the loop
+  if (too_fast < 10) {
+    delay(10 - too_fast);
+  }
 
 }
 
@@ -282,7 +308,17 @@ std::string floatToString(float value, int precision = 2) {
 }
 
 void dumpFlash(std::queue<std::string> arguments, std::string& response) {
-    dataSaver.dumpData(Serial);
+    // check for -a in arg
+    if (arguments.empty()) {
+        dataSaver.dumpData(Serial, false);
+        return;
+    } else if (arguments.front() == "-a") {
+        arguments.pop();
+        dataSaver.dumpData(Serial, true);
+        return;
+    } else {
+      cmdLine.println("Invalid argument. Use -a to ignore empty pages.");
+    }
 }
 
 void printStatus(std::queue<std::string> arguments, std::string& response) {
@@ -293,6 +329,23 @@ void printStatus(std::queue<std::string> arguments, std::string& response) {
     cmdLine.println(floatToString(launchPredictor.getLaunchedTime()));
     cmdLine.print("Median Acceleration Squared: ");
     cmdLine.println(floatToString(launchPredictor.getMedianAccelerationSquared()));
+
+    cmdLine.println("");
+    cmdLine.println("--Apogee Detector--");
+    cmdLine.print("Apogee Detected: ");
+    cmdLine.println(std::to_string(apogeeDetector.isApogeeDetected()));
+    cmdLine.print("Estimated Altitude: ");
+    cmdLine.println(floatToString(apogeeDetector.getEstimatedAltitude()));
+    cmdLine.print("Estimated Velocity: ");
+    cmdLine.println(floatToString(apogeeDetector.getEstimatedVelocity()));
+    cmdLine.print("Inertial Vertical Acceleration: ");
+    cmdLine.println(floatToString(apogeeDetector.getInertialVerticalAcceleration()));
+    cmdLine.print("Vertical Axis: ");
+    cmdLine.println(std::to_string(apogeeDetector.getVerticalAxis()));
+    cmdLine.print("Vertical Direction: ");
+    cmdLine.println(std::to_string(apogeeDetector.getVerticalDirection()));
+    cmdLine.print("Apogee Altitude: ");
+    cmdLine.println(floatToString(apogeeDetector.getApogee().data));
 
     cmdLine.println("");
     cmdLine.println("--Data Saver--");
@@ -347,3 +400,4 @@ void printStatus(std::queue<std::string> arguments, std::string& response) {
     cmdLine.print("Magnetometer Z: ");
     cmdLine.println(floatToString(zMagData.getLastDataPointSaved().data));
 }
+
