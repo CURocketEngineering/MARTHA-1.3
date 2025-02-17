@@ -42,7 +42,7 @@ def stream_csv_data(csv_file):
                         else:
                             print("Waiting for acknowledgment...")
 
-                time.sleep(0.1)  # Delay between sending each line of data (can adjust this)
+                # time.sleep(0.1)  # Delay between sending each line of data (can adjust this)
 
 try:
     # Wait for the start command before streaming
