@@ -1,10 +1,18 @@
 #include <Arduino.h>
 
-#include "Adafruit_LSM6DSOX.h"
-#include "Adafruit_LIS3MDL.h"
+#ifdef SIM
+  #include "simulation/Serial_Sim_LSM6DSOX.h"
+  #include "simulation/Serial_Sim_LIS3MDL.h"
+  #include "simulation/Serial_Sim_BMP390.h"
+  #include "simulation/Serial_Sim.h"
+#else
+  #include "Adafruit_LSM6DSOX.h"
+  #include "Adafruit_LIS3MDL.h"
+  #include <Async_BMP3XX.h>
+#endif
+
 #include "FlashDriver.h"
 #include <Adafruit_Sensor.h>
-#include <Async_BMP3XX.h>
 #include "pins.h"
 #include "UARTCommandHandler.h"
 
@@ -25,9 +33,16 @@ int led_toggle_delay = 1000;
 float loop_count = 0;
 uint32_t start_time_s = 0;
 
-Adafruit_LSM6DSOX sox;
-Adafruit_LIS3MDL  mag;
-Adafruit_BMP3XX   bmp;
+#ifdef SIM
+  SerialSimLSM6DSOX sox;
+  SerialSimLIS3MDL mag;
+  SerialSimBMP390 bmp;
+
+#else
+  Adafruit_LSM6DSOX sox;
+  Adafruit_LIS3MDL  mag;
+  Adafruit_BMP3XX   bmp;
+#endif
 
 Adafruit_SPIFlash flash(&flashTransport);
 DataSaverSPI dataSaver(10, &flash); // Save data every 10 ms
@@ -199,62 +214,74 @@ void loop() {
   sensors_event_t temp;
   sensors_event_t mag_event; 
 
-  sox.getEvent(&accel, &gyro, &temp);
+#ifdef SIM
+  SerialSim::getInstance().begin(); 
+  if (SerialSim::getInstance().serialAvalible()) { 
+    SerialSim::getInstance().readIncomingData(); // Read the incoming data
+    float time;
+    SerialSim::getInstance().updateTimeStamp(time); // Corrected method call
+#endif
 
-  DataPoint xAclDataPoint(current_time, accel.acceleration.x);
-  DataPoint yAclDataPoint(current_time, accel.acceleration.y);
-  DataPoint zAclDataPoint(current_time, accel.acceleration.z);
+    sox.getEvent(&accel, &gyro, &temp);
 
-  xAclData.addData(xAclDataPoint);
-  yAclData.addData(yAclDataPoint);
-  zAclData.addData(zAclDataPoint);
+    DataPoint xAclDataPoint(current_time, accel.acceleration.x);
+    DataPoint yAclDataPoint(current_time, accel.acceleration.y);
+    DataPoint zAclDataPoint(current_time, accel.acceleration.z);
 
-  mag.getEvent(&mag_event);
+    xAclData.addData(xAclDataPoint);
+    yAclData.addData(yAclDataPoint);
+    zAclData.addData(zAclDataPoint);
 
-  xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
-  yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
-  zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
+    mag.getEvent(&mag_event);
 
-  
+    xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
+    yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
+    zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
 
-  // Check periodically if a new reading is available
-  if (bmp.updateConversion()) {
-    float pres = bmp.getPressure();
-    float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
-    float temp = bmp.getTemperature();
     
-    tempData.addData(DataPoint(current_time, temp));
-    pressureData.addData(DataPoint(current_time, pres));
-    altDataPoint.data = alt;
-    altDataPoint.timestamp_ms = current_time;
-    altitudeData.addData(altDataPoint);
-    
-    // Immediately start the next conversion
-    bmp.startConversion();
+
+    // Check periodically if a new reading is available
+    if (bmp.updateConversion()) {
+      float pres = bmp.getPressure();
+      float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
+      float temp = bmp.getTemperature();
+      
+      tempData.addData(DataPoint(current_time, temp));
+      pressureData.addData(DataPoint(current_time, pres));
+      altDataPoint.data = alt;
+      altDataPoint.timestamp_ms = current_time;
+      altitudeData.addData(altDataPoint);
+      
+      // Immediately start the next conversion
+      bmp.startConversion();
+    }
+
+    // Will update the launch predictor and apogee detector
+    // Will log updates to the data saver
+    // Will put the data saver in post-launch mode if the launch predictor detects a launch
+    // Serial.println("State machine update with alt of " + String(altDataPoint.data));
+    stateMachine.update(
+      xAclDataPoint,
+      yAclDataPoint,
+      zAclDataPoint,
+      altDataPoint
+    );
+
+    if (stateMachine.getState() > STATE_ASCENT) {
+      led_toggle_delay = 50;
+    } else if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
+      led_toggle_delay = 100;
+    }
+
+    xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
+    yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
+    zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
+
+    superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
+
+#ifdef SIM
   }
-
-  // Will update the launch predictor and apogee detector
-  // Will log updates to the data saver
-  // Will put the data saver in post-launch mode if the launch predictor detects a launch
-  // Serial.println("State machine update with alt of " + String(altDataPoint.data));
-  stateMachine.update(
-    xAclDataPoint,
-    yAclDataPoint,
-    zAclDataPoint,
-    altDataPoint
-  );
-
-  if (stateMachine.getState() > STATE_ASCENT) {
-    led_toggle_delay = 50;
-  } else if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
-    led_toggle_delay = 100;
-  }
-
-  xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
-  yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
-  zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
-
-  superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
+#endif
 
   // Throttle to 100 Hz
   int too_fast = millis() - current_time;  // current_time was captured at the start of the loop
