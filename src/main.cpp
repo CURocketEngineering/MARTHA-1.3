@@ -89,7 +89,9 @@ void setup() {
   Serial.begin(115200);
   // while (!Serial) delay(10); // Wait for Serial Monitor (Comment out if not using)
 
+  #ifdef SIM
   SerialSim::getInstance().begin(); 
+  #endif
 
 
   Serial.println("Setting up accelerometer and gyroscope...");
