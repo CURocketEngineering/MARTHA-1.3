@@ -74,6 +74,7 @@ ApogeeDetector apogeeDetector(0.25f, 1.0f, 2.0f);
 StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector);
 
 CommandLine cmdLine(&Serial);
+HardwareSerial SUART1(PB7, PB6);
 
 void testCommand(queue<string> arguments, string& response);
 void ping(queue<string> arguments, string& response);
@@ -90,7 +91,7 @@ void setup() {
   // while (!Serial) delay(10); // Wait for Serial Monitor (Comment out if not using)
 
   #ifdef SIM
-  SerialSim::getInstance().begin(); 
+  SerialSim::getInstance().begin(&SUART1); 
   #endif
 
 
@@ -221,8 +222,7 @@ void loop() {
 #ifdef SIM
   if (SerialSim::getInstance().serialAvalible()) { 
     SerialSim::getInstance().readIncomingData(); // Read the incoming data
-    float time;
-    SerialSim::getInstance().updateTimeStamp(time); // Corrected method call
+    SerialSim::getInstance().update();
 #endif
 
     sox.getEvent(&accel, &gyro, &temp);
