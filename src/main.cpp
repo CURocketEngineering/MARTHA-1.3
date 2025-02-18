@@ -199,12 +199,6 @@ void loop() {
   sensors_event_t temp;
   sensors_event_t mag_event; 
 
-  mag.getEvent(&mag_event);
-
-  xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
-  yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
-  zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
-
   sox.getEvent(&accel, &gyro, &temp);
 
   DataPoint xAclDataPoint(current_time, accel.acceleration.x);
@@ -215,13 +209,19 @@ void loop() {
   yAclData.addData(yAclDataPoint);
   zAclData.addData(zAclDataPoint);
 
+  mag.getEvent(&mag_event);
+
+  xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
+  yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
+  zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
+
   
 
   // Check periodically if a new reading is available
   if (bmp.updateConversion()) {
-    float temp = bmp.getTemperature();
     float pres = bmp.getPressure();
     float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
+    float temp = bmp.getTemperature();
     
     tempData.addData(DataPoint(current_time, temp));
     pressureData.addData(DataPoint(current_time, pres));
