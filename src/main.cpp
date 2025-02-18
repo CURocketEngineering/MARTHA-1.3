@@ -89,6 +89,8 @@ void setup() {
   Serial.begin(115200);
   // while (!Serial) delay(10); // Wait for Serial Monitor (Comment out if not using)
 
+  SerialSim::getInstance().begin(); 
+
 
   Serial.println("Setting up accelerometer and gyroscope...");
   while (!sox.begin_SPI(SENSOR_LSM_CS)){
@@ -215,7 +217,6 @@ void loop() {
   sensors_event_t mag_event; 
 
 #ifdef SIM
-  SerialSim::getInstance().begin(); 
   if (SerialSim::getInstance().serialAvalible()) { 
     SerialSim::getInstance().readIncomingData(); // Read the incoming data
     float time;
@@ -242,8 +243,13 @@ void loop() {
 
     // Check periodically if a new reading is available
     if (bmp.updateConversion()) {
+      #ifdef SIM
+      float alt = bmp.getAlt();
+      float pres = bmp.getPressure();
+      #else
       float pres = bmp.getPressure();
       float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
+      #endif
       float temp = bmp.getTemperature();
       
       tempData.addData(DataPoint(current_time, temp));
@@ -280,6 +286,7 @@ void loop() {
     superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
 
 #ifdef SIM
+    SerialSim::getInstance().ack();
   }
 #endif
 
