@@ -12,7 +12,7 @@
 #include "data_handling/DataSaverSPI.h"
 #include "data_handling/DataNames.h"
 #include "flash_config.h"
-#include "state_estimation/LaunchPredictor.h"
+#include "state_estimation/LaunchDetector.h"
 #include "state_estimation/ApogeeDetector.h"
 #include "state_estimation/States.h"
 #include "state_estimation/StateMachine.h"
@@ -54,9 +54,10 @@ SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
 SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
 float flightID;
 
-LaunchPredictor launchPredictor(40, 500, 25);
+// fibo
+LaunchDetector launchDetector(40, 500, 25);
 ApogeeDetector apogeeDetector(0.25f, 1.0f, 2.0f);
-StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector);
+StateMachine stateMachine(&dataSaver, &launchDetector, &apogeeDetector);
 
 CommandLine cmdLine(&Serial);
 
@@ -297,7 +298,7 @@ void ping(queue<string> arguments, string& response) {
 
 void clearPostLaunchMode(queue<string> arguments, string& response) {
     dataSaver.clearPostLaunchMode();
-    launchPredictor.reset();
+    launchDetector.reset(); // fibo
     cmdLine.println("Cleared post launch mode, reboot the device to complete the reset.");
 }
 
@@ -322,13 +323,13 @@ void dumpFlash(std::queue<std::string> arguments, std::string& response) {
 }
 
 void printStatus(std::queue<std::string> arguments, std::string& response) {
-    cmdLine.println("--Launch Predictor--");
+    cmdLine.println("--Launch Detector--");
     cmdLine.print("Launched: ");
-    cmdLine.println(std::to_string(launchPredictor.isLaunched()));
+    cmdLine.println(std::to_string(launchDetector.isLaunched())); // fibo
     cmdLine.print("Launched Time: ");
-    cmdLine.println(floatToString(launchPredictor.getLaunchedTime()));
+    cmdLine.println(floatToString(launchDetector.getLaunchedTime())); // fibo
     cmdLine.print("Median Acceleration Squared: ");
-    cmdLine.println(floatToString(launchPredictor.getMedianAccelerationSquared()));
+    cmdLine.println(floatToString(launchDetector.getMedianAccelerationSquared())); // fibo
 
     cmdLine.println("");
     cmdLine.println("--Apogee Detector--");
