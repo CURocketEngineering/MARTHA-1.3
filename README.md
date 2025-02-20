@@ -1,6 +1,7 @@
-# MARTHA 
+![Martha v1.3 Logo](https://github.com/user-attachments/assets/80135adf-64cb-4d88-bd3a-99345a46cc7f)
 
-## What is the MARTHA repo for? 
+## What is the MARTHA repo for?
+
 
 MARTHA (Miniaturized Avionics for Rapid Testing Handling and Assessment) is our
 all-in-one flight computer for data collection and flight stage prediction. 
@@ -80,7 +81,3 @@ This test ensures that the battery doesn't drain too fast. At Spaceport, the fli
     4. Check the log's oldest timestamp to see if it makes sense and that logging last long enough
 
 -------
-
-
-
-![Martha Logo](assets/MARTHA1.3.png)
