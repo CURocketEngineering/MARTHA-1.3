@@ -5,7 +5,6 @@
 #include "Adafruit_BMP3XX.h"
 // #include "FlashDriver.h"
 #include <Adafruit_Sensor.h>
-#include <Async_BMP3XX.h>
 #include "pins.h"
 #include "UARTCommandHandler.h"
 
@@ -47,20 +46,14 @@ SensorDataHandler zGyroData(GYROSCOPE_Z, &dataSaver);
 SensorDataHandler tempData(TEMPERATURE, &dataSaver);
 SensorDataHandler pressureData(PRESSURE, &dataSaver);
 SensorDataHandler altitudeData(ALTITUDE, &dataSaver);
-DataPoint altDataPoint;
 
 SensorDataHandler xMagData(MAGNETOMETER_X, &dataSaver);
 SensorDataHandler yMagData(MAGNETOMETER_Y, &dataSaver);
 SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
-SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
-SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
-float flightID;
 
-LaunchPredictor launchPredictor(40, 500, 25);
-ApogeeDetector apogeeDetector(0.25f, 1.0f, 2.0f);
-StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector);
+LaunchPredictor launchPredictor(30, 1000, 40);
 
 // Create command handler and flash driver
 std::shared_ptr<CommandHandler> cmdHandler = std::make_shared<CommandHandler>();
@@ -141,24 +134,10 @@ void setup() {
   bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
   bmp.setOutputDataRate(BMP3_ODR_100_HZ);
 
-  bmp.setConversionDelay(10); // 10 ms == 100 Hz
-  bmp.startConversion(); // Start the first conversion
-
-  Serial.println("Setting up data saver...");
-
-  // Initalize data saver
-  if (!dataSaver.begin()) {
-    Serial.println("Failed to initialize data saver");
-  }
-
-  Serial.println("Setup complete!");
-
-  cmdLine.addCommand("test", "t", testCommand);  
-  cmdLine.addCommand("ping", "p", ping);    
-  cmdLine.addCommand("clear_plm", "cplm", clearPostLaunchMode);
-  cmdLine.addCommand("status", "s", printStatus);
-  cmdLine.addCommand("dump", "d", dumpFlash);
-  cmdLine.begin();
+    Serial.println("Setting up data saver...");
+    if (!dataSaver.begin()) {
+        Serial.println("Failed to initialize data saver");
+    }
 
     // Set save speeds
   tempData.restrictSaveSpeed(1000);
@@ -167,18 +146,12 @@ void setup() {
   yMagData.restrictSaveSpeed(1000);
   zMagData.restrictSaveSpeed(1000);
   superLoopRate.restrictSaveSpeed(1000);
-  altitudeData.restrictSaveSpeed(10); // Save altitude every 10 ms (100hz)
-  flightIDSaver.restrictSaveSpeed(10000);
 
 
   // Loop start time
   start_time_s = millis() / 1000;
 
-  // Seed the random number generator
-  randomSeed(analogRead(0));
-
-  // Set the flight ID
-  flightID = random(100000, 999999);
+    Serial.println("Setup complete!");
 }
 
 void loop() {
@@ -194,88 +167,62 @@ void loop() {
 
     loop_count += 1;
 
-  cmdLine.readInput();
+    uint32_t current_time = millis();
+    if (current_time - last_led_toggle > led_toggle_delay) {
+        last_led_toggle = millis();
+        digitalWrite(DEBUG_LED, !digitalRead(DEBUG_LED));
+    }
 
-  loop_count += 1;
+    sensors_event_t accel;
+    sensors_event_t gyro;
+    sensors_event_t temp;
+    sensors_event_t mag_event;
 
-  uint32_t current_time = millis();
-  if (current_time - last_led_toggle > led_toggle_delay) {
-    last_led_toggle = millis();
-    digitalWrite(DEBUG_LED, !digitalRead(DEBUG_LED));
-  }
+    mag.getEvent(&mag_event);
 
-  // Explicitly save a timestamp to ensure that all data from this loop is associated with the same timestamp and distinct from the previous loop
-  dataSaver.saveTimestamp(current_time, TIMESTAMP);
+    xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
+    yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
+    zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
 
-  flightIDSaver.addData(DataPoint(current_time, flightID));
+    sox.getEvent(&accel, &gyro, &temp);
 
-  sensors_event_t accel;
-  sensors_event_t gyro;
-  sensors_event_t temp;
-  sensors_event_t mag_event; 
+    xAclData.addData(DataPoint(current_time, accel.acceleration.x));
+    yAclData.addData(DataPoint(current_time, accel.acceleration.y));
+    zAclData.addData(DataPoint(current_time, accel.acceleration.z));
 
-  mag.getEvent(&mag_event);
+    launchPredictor.update(DataPoint(current_time, accel.acceleration.x),
+                          DataPoint(current_time, accel.acceleration.y),
+                          DataPoint(current_time, accel.acceleration.z));
 
-  xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
-  yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
-  zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
+    // Blink fast if in post launch mode (DO NOT LAUNCH)
+    if (dataSaver.quickGetPostLaunchMode()) {
+        led_toggle_delay = 100;
+    } else {
+        // If launch detected, put the dataSaver into post launch mode
+        if (launchPredictor.isLaunched()) {
+            Serial.println("Launch detected!");
+            dataSaver.launchDetected(launchPredictor.getLaunchedTime());
+        }
+    }
 
-  sox.getEvent(&accel, &gyro, &temp);
+    xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
+    yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
+    zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
 
-  DataPoint xAclDataPoint(current_time, accel.acceleration.x);
-  DataPoint yAclDataPoint(current_time, accel.acceleration.y);
-  DataPoint zAclDataPoint(current_time, accel.acceleration.z);
+    tempData.addData(DataPoint(current_time, temp.temperature));
 
-  xAclData.addData(xAclDataPoint);
-  yAclData.addData(yAclDataPoint);
-  zAclData.addData(zAclDataPoint);
+    if (!bmp.performReading()) {
+        Serial.println("Failed to perform reading :(");
+        return;
+    }
 
-  
-
-  // Check periodically if a new reading is available
-  if (bmp.updateConversion()) {
-    float temp = bmp.getTemperature();
-    float pres = bmp.getPressure();
-    float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
-    
-    tempData.addData(DataPoint(current_time, temp));
-    pressureData.addData(DataPoint(current_time, pres));
-    altDataPoint.data = alt;
-    altDataPoint.timestamp_ms = current_time;
-    altitudeData.addData(altDataPoint);
-    
-    // Immediately start the next conversion
-    bmp.startConversion();
-  }
-
-  // Will update the launch predictor and apogee detector
-  // Will log updates to the data saver
-  // Will put the data saver in post-launch mode if the launch predictor detects a launch
-  // Serial.println("State machine update with alt of " + String(altDataPoint.data));
-  stateMachine.update(
-    xAclDataPoint,
-    yAclDataPoint,
-    zAclDataPoint,
-    altDataPoint
-  );
-
-  if (stateMachine.getState() > STATE_ASCENT) {
-    led_toggle_delay = 50;
-  } else if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
-    led_toggle_delay = 100;
-  }
-
-  xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
-  yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
-  zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
+  altitudeData.addData(DataPoint(current_time, bmp.readAltitude(SEALEVELPRESSURE_HPA)));
+  pressureData.addData(DataPoint(current_time, bmp.pressure));
 
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
 
-  // Throttle to 100 Hz
-  int too_fast = millis() - current_time;  // current_time was captured at the start of the loop
-  if (too_fast < 10) {
-    delay(10 - too_fast);
-  }
+  // print in hz the loop rate
+  // Serial.println(loop_count / (millis() / 1000 - start_time_s));
 
 }
 
@@ -299,11 +246,12 @@ void loop() {
 //             // Print each argument to the UART
 //             cmdLine.println(" - " + argument);
             
-            // Append the argument to the response
-            response += argument + " ";
-        }
-    }
-}
+//             // Append the argument to the response
+//             response += argument + " ";
+//         }
+//     }
+// }
+
 
 // void ping(queue<string> arguments, string& response) {
 //     cmdLine.println("Pinged the microntroller ");
