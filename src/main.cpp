@@ -33,16 +33,10 @@ int led_toggle_delay = 1000;
 float loop_count = 0;
 uint32_t start_time_s = 0;
 
-#ifdef SIM
-  SerialSimLSM6DSOX sox;
-  SerialSimLIS3MDL mag;
-  SerialSimBMP390 bmp;
+Adafruit_LSM6DSOX sox;
+Adafruit_LIS3MDL  mag;
+Adafruit_BMP3XX   bmp;
 
-#else
-  Adafruit_LSM6DSOX sox;
-  Adafruit_LIS3MDL  mag;
-  Adafruit_BMP3XX   bmp;
-#endif
 
 Adafruit_SPIFlash flash(&flashTransport);
 DataSaverSPI dataSaver(10, &flash); // Save data every 10 ms
@@ -90,9 +84,6 @@ void setup() {
   Serial.begin(115200);
   // while (!Serial) delay(10); // Wait for Serial Monitor (Comment out if not using)
 
-  #ifdef SIM
-  SerialSim::getInstance().begin(&SUART1); 
-  #endif
 
 
   Serial.println("Setting up accelerometer and gyroscope...");
@@ -133,12 +124,6 @@ void setup() {
   mag.setRange(LIS3MDL_RANGE_4_GAUSS);
   mag.setOperationMode(LIS3MDL_CONTINUOUSMODE);
   mag.setPerformanceMode(LIS3MDL_MEDIUMMODE);
-
-  // mag.setIntThreshold(500);
-  // mag.configInterrupt(false, false, true, // enable z axis
-  //                         true, // polarity
-  //                         false, // don't latch
-  //                         true); // enabled!
 
   if (mag.getDataRate() != LIS3MDL_DATARATE_155_HZ) {
     Serial.println("Failed to set Mag data rate");
@@ -195,11 +180,17 @@ void setup() {
   // Set the flight ID
   flightID = random(100000, 999999);
 
+  // Simulation stuff
+
+  #ifdef SIM
+  while (!Serial) delay(10);
+  SerialSim::getInstance().begin(&Serial, &stateMachine); 
+  dataSaver.clearPostLaunchMode(); // Clear plm for sim
+  #endif
+
 }
 
 void loop() {
-
-  cmdLine.readInput();
 
   loop_count += 1;
 
@@ -219,85 +210,83 @@ void loop() {
   sensors_event_t temp;
   sensors_event_t mag_event; 
 
-#ifdef SIM
-  if (SerialSim::getInstance().serialAvalible()) { 
-    SerialSim::getInstance().readIncomingData(); // Read the incoming data
-    SerialSim::getInstance().update();
-#endif
+  // Cannot use cmdLine in SIM mode b/c they use the same
+  // serial port
+  #ifdef SIM
+  SerialSim::getInstance().update();
+  #else 
+  cmdLine.readInput();
+  #endif
 
-    sox.getEvent(&accel, &gyro, &temp);
+  sox.getEvent(&accel, &gyro, &temp);
 
-    DataPoint xAclDataPoint(current_time, accel.acceleration.x);
-    DataPoint yAclDataPoint(current_time, accel.acceleration.y);
-    DataPoint zAclDataPoint(current_time, accel.acceleration.z);
+  DataPoint xAclDataPoint(current_time, accel.acceleration.x);
+  DataPoint yAclDataPoint(current_time, accel.acceleration.y);
+  DataPoint zAclDataPoint(current_time, accel.acceleration.z);
 
-    xAclData.addData(xAclDataPoint);
-    yAclData.addData(yAclDataPoint);
-    zAclData.addData(zAclDataPoint);
+  xAclData.addData(xAclDataPoint);
+  yAclData.addData(yAclDataPoint);
+  zAclData.addData(zAclDataPoint);
 
-    mag.getEvent(&mag_event);
+  mag.getEvent(&mag_event);
 
-    xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
-    yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
-    zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
+  xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
+  yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
+  zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
+
+
+
+  // Check periodically if a new reading is available
+  if (bmp.updateConversion()) {
+   
+    float pres = bmp.getPressure();
+    #ifdef SIM
+      float alt = bmp.getAlt();
+    #else
+      // Simulation data might not store pressure in the same units, while meters is standard for alt
+      float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
+    #endif
+    float temp = bmp.getTemperature();
 
     
-
-    // Check periodically if a new reading is available
-    if (bmp.updateConversion()) {
-      #ifdef SIM
-      float alt = bmp.getAlt();
-      float pres = bmp.getPressure();
-      #else
-      float pres = bmp.getPressure();
-      float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
-      #endif
-      float temp = bmp.getTemperature();
-      
-      tempData.addData(DataPoint(current_time, temp));
-      pressureData.addData(DataPoint(current_time, pres));
-      altDataPoint.data = alt;
-      altDataPoint.timestamp_ms = current_time;
-      altitudeData.addData(altDataPoint);
-      
-      // Immediately start the next conversion
-      bmp.startConversion();
-    }
-
-    // Will update the launch predictor and apogee detector
-    // Will log updates to the data saver
-    // Will put the data saver in post-launch mode if the launch predictor detects a launch
-    // Serial.println("State machine update with alt of " + String(altDataPoint.data));
-    stateMachine.update(
-      xAclDataPoint,
-      yAclDataPoint,
-      zAclDataPoint,
-      altDataPoint
-    );
-
-    if (stateMachine.getState() > STATE_ASCENT) {
-      led_toggle_delay = 50;
-    } else if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
-      led_toggle_delay = 100;
-    }
-
-    xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
-    yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
-    zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
-
-    superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
-
-#ifdef SIM
-    SerialSim::getInstance().ack();
+    tempData.addData(DataPoint(current_time, temp));
+    pressureData.addData(DataPoint(current_time, pres));
+    altDataPoint.data = alt;
+    altDataPoint.timestamp_ms = current_time;
+    altitudeData.addData(altDataPoint);
+    
+    // Immediately start the next conversion
+    bmp.startConversion();
   }
-#endif
+
+  // Will update the launch predictor and apogee detector
+  // Will log updates to the data saver
+  // Will put the data saver in post-launch mode if the launch predictor detects a launch
+  // Serial.println("State machine update with alt of " + String(altDataPoint.data));
+  stateMachine.update(
+    xAclDataPoint,
+    yAclDataPoint,
+    zAclDataPoint,
+    altDataPoint
+  );
+
+  if (stateMachine.getState() > STATE_ASCENT) {
+    led_toggle_delay = 50;
+  } else if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
+    led_toggle_delay = 100;
+  }
+
+  xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
+  yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
+  zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
+
+  superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
 
   // Throttle to 100 Hz
   int too_fast = millis() - current_time;  // current_time was captured at the start of the loop
   if (too_fast < 10) {
     delay(10 - too_fast);
   }
-
 }
 
 
