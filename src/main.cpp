@@ -1,10 +1,18 @@
 #include <Arduino.h>
 
-#include "Adafruit_LSM6DSOX.h"
-#include "Adafruit_LIS3MDL.h"
+#ifdef SIM
+  #include "simulation/Serial_Sim_LSM6DSOX.h"
+  #include "simulation/Serial_Sim_LIS3MDL.h"
+  #include "simulation/Serial_Sim_BMP390.h"
+  #include "simulation/Serial_Sim.h"
+#else
+  #include "Adafruit_LSM6DSOX.h"
+  #include "Adafruit_LIS3MDL.h"
+  #include <Async_BMP3XX.h>
+#endif
+
 #include "FlashDriver.h"
 #include <Adafruit_Sensor.h>
-#include <Async_BMP3XX.h>
 #include "pins.h"
 #include "UARTCommandHandler.h"
 
@@ -28,6 +36,7 @@ uint32_t start_time_s = 0;
 Adafruit_LSM6DSOX sox;
 Adafruit_LIS3MDL  mag;
 Adafruit_BMP3XX   bmp;
+
 
 Adafruit_SPIFlash flash(&flashTransport);
 DataSaverSPI dataSaver(10, &flash); // Save data every 10 ms
@@ -59,6 +68,7 @@ ApogeeDetector apogeeDetector(0.25f, 1.0f, 2.0f);
 StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector);
 
 CommandLine cmdLine(&Serial);
+HardwareSerial SUART1(PB7, PB6);
 
 void testCommand(queue<string> arguments, string& response);
 void ping(queue<string> arguments, string& response);
@@ -73,6 +83,7 @@ void setup() {
 
   Serial.begin(115200);
   // while (!Serial) delay(10); // Wait for Serial Monitor (Comment out if not using)
+
 
 
   Serial.println("Setting up accelerometer and gyroscope...");
@@ -113,12 +124,6 @@ void setup() {
   mag.setRange(LIS3MDL_RANGE_4_GAUSS);
   mag.setOperationMode(LIS3MDL_CONTINUOUSMODE);
   mag.setPerformanceMode(LIS3MDL_MEDIUMMODE);
-
-  // mag.setIntThreshold(500);
-  // mag.configInterrupt(false, false, true, // enable z axis
-  //                         true, // polarity
-  //                         false, // don't latch
-  //                         true); // enabled!
 
   if (mag.getDataRate() != LIS3MDL_DATARATE_155_HZ) {
     Serial.println("Failed to set Mag data rate");
@@ -175,11 +180,17 @@ void setup() {
   // Set the flight ID
   flightID = random(100000, 999999);
 
+  // Simulation stuff
+
+  #ifdef SIM
+  while (!Serial) delay(10);
+  SerialSim::getInstance().begin(&Serial, &stateMachine); 
+  dataSaver.clearPostLaunchMode(); // Clear plm for sim
+  #endif
+
 }
 
 void loop() {
-
-  cmdLine.readInput();
 
   loop_count += 1;
 
@@ -199,11 +210,13 @@ void loop() {
   sensors_event_t temp;
   sensors_event_t mag_event; 
 
-  mag.getEvent(&mag_event);
-
-  xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
-  yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
-  zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
+  // Cannot use cmdLine in SIM mode b/c they use the same
+  // serial port
+  #ifdef SIM
+  SerialSim::getInstance().update();
+  #else 
+  cmdLine.readInput();
+  #endif
 
   sox.getEvent(&accel, &gyro, &temp);
 
@@ -215,13 +228,26 @@ void loop() {
   yAclData.addData(yAclDataPoint);
   zAclData.addData(zAclDataPoint);
 
-  
+  mag.getEvent(&mag_event);
+
+  xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
+  yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
+  zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
+
+
 
   // Check periodically if a new reading is available
   if (bmp.updateConversion()) {
-    float temp = bmp.getTemperature();
+   
     float pres = bmp.getPressure();
-    float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
+    #ifdef SIM
+      float alt = bmp.getAlt();
+    #else
+      // Simulation data might not store pressure in the same units, while meters is standard for alt
+      float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
+    #endif
+    float temp = bmp.getTemperature();
+
     
     tempData.addData(DataPoint(current_time, temp));
     pressureData.addData(DataPoint(current_time, pres));
@@ -261,7 +287,6 @@ void loop() {
   if (too_fast < 10) {
     delay(10 - too_fast);
   }
-
 }
 
 
