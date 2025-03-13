@@ -124,19 +124,19 @@ void setup() {
     Serial.println("Failed to set Mag data rate");
   }
 
-  while (! bmp.begin_SPI(SENSOR_BARO_CS)) {  // software SPI mode
-    Serial.println("Could not find a valid BMP3 sensor, check wiring!");
-    delay(10);
-  }
+  // while (! bmp.begin_SPI(SENSOR_BARO_CS)) {  // software SPI mode
+  //   Serial.println("Could not find a valid BMP3 sensor, check wiring!");
+  //   delay(10);
+  // }
 
-  // Set up oversampling and filter initialization
-  bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
-  bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
-  bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
-  bmp.setOutputDataRate(BMP3_ODR_100_HZ);
+  // // Set up oversampling and filter initialization
+  // bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
+  // bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
+  // bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
+  // bmp.setOutputDataRate(BMP3_ODR_100_HZ);
 
-  bmp.setConversionDelay(10); // 10 ms == 100 Hz
-  bmp.startConversion(); // Start the first conversion
+  // bmp.setConversionDelay(10); // 10 ms == 100 Hz
+  // bmp.startConversion(); // Start the first conversion
 
   Serial.println("Setting up data saver...");
 
@@ -218,20 +218,29 @@ void loop() {
   
 
   // Check periodically if a new reading is available
-  if (bmp.updateConversion()) {
-    float temp = bmp.getTemperature();
-    float pres = bmp.getPressure();
-    float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
+  // if (bmp.updateConversion()) {
+  //   float temp = bmp.getTemperature();
+  //   float pres = bmp.getPressure();
+  //   float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
     
-    tempData.addData(DataPoint(current_time, temp));
-    pressureData.addData(DataPoint(current_time, pres));
-    altDataPoint.data = alt;
-    altDataPoint.timestamp_ms = current_time;
-    altitudeData.addData(altDataPoint);
+  //   tempData.addData(DataPoint(current_time, temp));
+  //   pressureData.addData(DataPoint(current_time, pres));
+  //   altDataPoint.data = alt;
+  //   altDataPoint.timestamp_ms = current_time;
+  //   altitudeData.addData(altDataPoint);
     
-    // Immediately start the next conversion
-    bmp.startConversion();
-  }
+  //   // Immediately start the next conversion
+  //   bmp.startConversion();
+  // }
+
+  float bmptemp = 20;
+  float pres = 1000;
+  float alt = 0;
+  tempData.addData(DataPoint(current_time, bmptemp));
+  pressureData.addData(DataPoint(current_time, pres));
+  altDataPoint.data = alt;
+  altDataPoint.timestamp_ms = current_time;
+  altitudeData.addData(altDataPoint);
 
   // Will update the launch predictor and apogee detector
   // Will log updates to the data saver
