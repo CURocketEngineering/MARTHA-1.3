@@ -22,6 +22,7 @@
 #include "flash_config.h"
 #include "state_estimation/LaunchPredictor.h"
 #include "state_estimation/ApogeeDetector.h"
+#include "state_estimation/VerticalVelocityEstimator.h"
 #include "state_estimation/States.h"
 #include "state_estimation/StateMachine.h"
 
@@ -64,8 +65,10 @@ SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
 float flightID;
 
 LaunchPredictor launchPredictor(40, 500, 25);
-ApogeeDetector apogeeDetector(0.25f, 1.0f, 2.0f);
-StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector);
+
+VerticalVelocityEstimator verticalVelocityEstimator(0.25f, 1.0f);
+ApogeeDetector apogeeDetector(1.0f);
+StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector, &verticalVelocityEstimator);
 
 CommandLine cmdLine(&Serial);
 HardwareSerial SUART1(PB7, PB6);
@@ -360,15 +363,15 @@ void printStatus(std::queue<std::string> arguments, std::string& response) {
     cmdLine.print("Apogee Detected: ");
     cmdLine.println(std::to_string(apogeeDetector.isApogeeDetected()));
     cmdLine.print("Estimated Altitude: ");
-    cmdLine.println(floatToString(apogeeDetector.getEstimatedAltitude()));
+    cmdLine.println(floatToString(verticalVelocityEstimator.getEstimatedAltitude()));
     cmdLine.print("Estimated Velocity: ");
-    cmdLine.println(floatToString(apogeeDetector.getEstimatedVelocity()));
+    cmdLine.println(floatToString(verticalVelocityEstimator.getEstimatedVelocity()));
     cmdLine.print("Inertial Vertical Acceleration: ");
-    cmdLine.println(floatToString(apogeeDetector.getInertialVerticalAcceleration()));
+    cmdLine.println(floatToString(verticalVelocityEstimator.getInertialVerticalAcceleration()));
     cmdLine.print("Vertical Axis: ");
-    cmdLine.println(std::to_string(apogeeDetector.getVerticalAxis()));
+    cmdLine.println(std::to_string(verticalVelocityEstimator.getVerticalAxis()));
     cmdLine.print("Vertical Direction: ");
-    cmdLine.println(std::to_string(apogeeDetector.getVerticalDirection()));
+    cmdLine.println(std::to_string(verticalVelocityEstimator.getVerticalDirection()));
     cmdLine.print("Apogee Altitude: ");
     cmdLine.println(floatToString(apogeeDetector.getApogee().data));
 
