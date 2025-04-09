@@ -23,6 +23,7 @@
 #include "state_estimation/LaunchPredictor.h"
 #include "state_estimation/ApogeeDetector.h"
 #include "state_estimation/VerticalVelocityEstimator.h"
+#include "state_estimation/ApogeePredictor.h"
 #include "state_estimation/States.h"
 #include "state_estimation/StateMachine.h"
 
@@ -69,6 +70,9 @@ LaunchPredictor launchPredictor(40, 500, 25);
 VerticalVelocityEstimator verticalVelocityEstimator(0.25f, 1.0f);
 ApogeeDetector apogeeDetector(1.0f);
 StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector, &verticalVelocityEstimator);
+
+ApogeePredictor apogeePredictor(verticalVelocityEstimator);
+SensorDataHandler apogeeEstData(EST_APOGEE, &dataSaver);
 
 CommandLine cmdLine(&Serial);
 HardwareSerial SUART1(PB7, PB6);
@@ -172,6 +176,7 @@ void setup() {
   superLoopRate.restrictSaveSpeed(1000);
   altitudeData.restrictSaveSpeed(10); // Save altitude every 10 ms (100hz)
   flightIDSaver.restrictSaveSpeed(10000);
+  apogeeEstData.restrictSaveSpeed(10);
 
 
   // Loop start time
@@ -277,6 +282,12 @@ void loop() {
     led_toggle_delay = 50;
   } else if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
     led_toggle_delay = 100;
+  }
+
+  // If post-launch, then start saving estimated apogee data
+  if (stateMachine.getState() >= STATE_ASCENT) {
+    apogeePredictor.update();
+    apogeeEstData.addData(DataPoint(current_time, apogeePredictor.getPredictedApogeeAltitude_m()));
   }
 
   xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
