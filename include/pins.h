@@ -31,6 +31,7 @@
 #define FLASH_CS PB1
 #define DEBUG_LED PA9
 
+#define BATTERY_VOLTAGE PB11 // ADC pin for battery voltage measurement
 #define EXTERNAL_FLASH_USE_CS PB1
 #define EXTERNAL_FLASH_USE_SPI SPI
 
