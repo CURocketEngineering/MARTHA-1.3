@@ -260,9 +260,9 @@ void loop() {
     bmp.startConversion();
   }
 
-  // Will update the launch predictor and apogee detector
+  // Will update the launch detector and apogee detector
   // Will log updates to the data saver
-  // Will put the data saver in post-launch mode if the launch predictor detects a launch
+  // Will put the data saver in post-launch mode if the launch detector detects a launch
   // Serial.println("State machine update with alt of " + String(altDataPoint.data));
   stateMachine.update(
     xAclDataPoint,
