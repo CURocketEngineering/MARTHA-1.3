@@ -20,7 +20,7 @@
 #include "data_handling/DataSaverSPI.h"
 #include "data_handling/DataNames.h"
 #include "flash_config.h"
-#include "state_estimation/LaunchPredictor.h"
+#include "state_estimation/LaunchDetector.h"
 #include "state_estimation/ApogeeDetector.h"
 #include "state_estimation/VerticalVelocityEstimator.h"
 #include "state_estimation/ApogeePredictor.h"
@@ -65,11 +65,11 @@ SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
 SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
 float flightID;
 
-LaunchPredictor launchPredictor(40, 500, 25);
+LaunchDetector launchDetector(40, 500, 25);
 
 VerticalVelocityEstimator verticalVelocityEstimator(0.25f, 1.0f);
 ApogeeDetector apogeeDetector(1.0f);
-StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector, &verticalVelocityEstimator);
+StateMachine stateMachine(&dataSaver, &launchDetector, &apogeeDetector, &verticalVelocityEstimator);
 
 ApogeePredictor apogeePredictor(verticalVelocityEstimator);
 SensorDataHandler apogeeEstData(EST_APOGEE, &dataSaver);
@@ -267,9 +267,9 @@ void loop() {
     bmp.startConversion();
   }
 
-  // Will update the launch predictor and apogee detector
+  // Will update the launch detector and apogee detector
   // Will log updates to the data saver
-  // Will put the data saver in post-launch mode if the launch predictor detects a launch
+  // Will put the data saver in post-launch mode if the launch detector detects a launch
   // Serial.println("State machine update with alt of " + String(altDataPoint.data));
   stateMachine.update(
     xAclDataPoint,
@@ -336,7 +336,7 @@ void ping(queue<string> arguments, string& response) {
 
 void clearPostLaunchMode(queue<string> arguments, string& response) {
     dataSaver.clearPostLaunchMode();
-    launchPredictor.reset();
+    launchDetector.reset(); // fibo
     cmdLine.println("Cleared post launch mode, reboot the device to complete the reset.");
 }
 
@@ -361,13 +361,13 @@ void dumpFlash(std::queue<std::string> arguments, std::string& response) {
 }
 
 void printStatus(std::queue<std::string> arguments, std::string& response) {
-    cmdLine.println("--Launch Predictor--");
+    cmdLine.println("--Launch Detector--");
     cmdLine.print("Launched: ");
-    cmdLine.println(std::to_string(launchPredictor.isLaunched()));
+    cmdLine.println(std::to_string(launchDetector.isLaunched())); // fibo
     cmdLine.print("Launched Time: ");
-    cmdLine.println(floatToString(launchPredictor.getLaunchedTime()));
+    cmdLine.println(floatToString(launchDetector.getLaunchedTime())); // fibo
     cmdLine.print("Median Acceleration Squared: ");
-    cmdLine.println(floatToString(launchPredictor.getMedianAccelerationSquared()));
+    cmdLine.println(floatToString(launchDetector.getMedianAccelerationSquared())); // fibo
 
     cmdLine.println("");
     cmdLine.println("--Apogee Detector--");
