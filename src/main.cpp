@@ -11,7 +11,6 @@
   #include <Async_BMP3XX.h>
 #endif
 
-#include "FlashDriver.h"
 #include <Adafruit_Sensor.h>
 #include "pins.h"
 #include "UARTCommandHandler.h"
@@ -136,6 +135,7 @@ void setup() {
     Serial.println("Failed to set Mag data rate");
   }
 
+  #ifndef NO_ALT // If not altimeter, then don't set it up
   while (! bmp.begin_SPI(SENSOR_BARO_CS)) {  // software SPI mode
     Serial.println("Could not find a valid BMP3 sensor, check wiring!");
     delay(10);
@@ -149,6 +149,8 @@ void setup() {
 
   bmp.setConversionDelay(10); // 10 ms == 100 Hz
   bmp.startConversion(); // Start the first conversion
+
+  #endif // NO_ALT
 
   Serial.println("Setting up data saver...");
 
@@ -245,6 +247,7 @@ void loop() {
 
 
   // Check periodically if a new reading is available
+  #ifndef NO_ALT
   if (bmp.updateConversion()) {
    
     float pres = bmp.getPressure();
@@ -266,6 +269,7 @@ void loop() {
     // Immediately start the next conversion
     bmp.startConversion();
   }
+  #endif // NO_ALT
 
   // Will update the launch detector and apogee detector
   // Will log updates to the data saver
