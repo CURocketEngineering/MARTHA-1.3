@@ -66,7 +66,9 @@ float flightID;
 
 LaunchDetector launchDetector(40, 500, 25);
 
-VerticalVelocityEstimator verticalVelocityEstimator(0.25f, 1.0f);
+NoiseVariances noiseVariances {0.25f, 1.0f}; // Example variances
+
+VerticalVelocityEstimator verticalVelocityEstimator(noiseVariances);
 ApogeeDetector apogeeDetector(1.0f);
 StateMachine stateMachine(&dataSaver, &launchDetector, &apogeeDetector, &verticalVelocityEstimator);
 
@@ -76,11 +78,11 @@ SensorDataHandler apogeeEstData(EST_APOGEE, &dataSaver);
 CommandLine cmdLine(&Serial);
 HardwareSerial SUART1(PB7, PB6);
 
-void testCommand(queue<string> arguments, string& response);
-void ping(queue<string> arguments, string& response);
-void dumpFlash(queue<string> arguments, string& response);
-void clearPostLaunchMode(queue<string> arguments, string& response);
-void printStatus(queue<string> arguments, string& response);
+void testCommand(std::queue<std::string> arguments, std::string& response);
+void ping(std::queue<std::string> arguments, std::string& response);
+void dumpFlash(std::queue<std::string> arguments, std::string& response);
+void clearPostLaunchMode(std::queue<std::string> arguments, std::string& response);
+void printStatus(std::queue<std::string> arguments, std::string& response);
 
 void setup() {
 
@@ -211,7 +213,7 @@ void loop() {
   }
 
   // Explicitly save a timestamp to ensure that all data from this loop is associated with the same timestamp and distinct from the previous loop
-  dataSaver.saveTimestamp(current_time, TIMESTAMP);
+  dataSaver.saveTimestamp(current_time);
 
   flightIDSaver.addData(DataPoint(current_time, flightID));
 
@@ -237,6 +239,8 @@ void loop() {
   xAclData.addData(xAclDataPoint);
   yAclData.addData(yAclDataPoint);
   zAclData.addData(zAclDataPoint);
+
+  AccelerationTriplet aclTriplet = {xAclDataPoint, yAclDataPoint, zAclDataPoint};
 
   mag.getEvent(&mag_event);
 
@@ -276,9 +280,7 @@ void loop() {
   // Will put the data saver in post-launch mode if the launch detector detects a launch
   // Serial.println("State machine update with alt of " + String(altDataPoint.data));
   stateMachine.update(
-    xAclDataPoint,
-    yAclDataPoint,
-    zAclDataPoint,
+    aclTriplet,
     altDataPoint
   );
 
@@ -334,11 +336,11 @@ void testCommand(std::queue<std::string> arguments, std::string& response) {
 }
 
 
-void ping(queue<string> arguments, string& response) {
+void ping(std::queue<std::string> arguments, std::string& response) {
     cmdLine.println("Pinged the microntroller ");
 }
 
-void clearPostLaunchMode(queue<string> arguments, string& response) {
+void clearPostLaunchMode(std::queue<std::string> arguments, std::string& response) {
     dataSaver.clearPostLaunchMode();
     launchDetector.reset(); // fibo
     cmdLine.println("Cleared post launch mode, reboot the device to complete the reset.");
