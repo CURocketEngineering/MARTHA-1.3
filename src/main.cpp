@@ -11,7 +11,6 @@
   #include <Async_BMP3XX.h>
 #endif
 
-#include "FlashDriver.h"
 #include <Adafruit_Sensor.h>
 #include "pins.h"
 #include "UARTCommandHandler.h"
@@ -20,8 +19,10 @@
 #include "data_handling/DataSaverSPI.h"
 #include "data_handling/DataNames.h"
 #include "flash_config.h"
-#include "state_estimation/LaunchPredictor.h"
+#include "state_estimation/LaunchDetector.h"
 #include "state_estimation/ApogeeDetector.h"
+#include "state_estimation/VerticalVelocityEstimator.h"
+#include "state_estimation/ApogeePredictor.h"
 #include "state_estimation/States.h"
 #include "state_estimation/StateMachine.h"
 
@@ -63,18 +64,25 @@ SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
 SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
 float flightID;
 
-LaunchPredictor launchPredictor(40, 500, 25);
-ApogeeDetector apogeeDetector(0.25f, 1.0f, 2.0f);
-StateMachine stateMachine(&dataSaver, &launchPredictor, &apogeeDetector);
+LaunchDetector launchDetector(40, 500, 25);
+
+NoiseVariances noiseVariances {0.25f, 1.0f}; // Example variances
+
+VerticalVelocityEstimator verticalVelocityEstimator(noiseVariances);
+ApogeeDetector apogeeDetector(1.0f);
+StateMachine stateMachine(&dataSaver, &launchDetector, &apogeeDetector, &verticalVelocityEstimator);
+
+ApogeePredictor apogeePredictor(verticalVelocityEstimator);
+SensorDataHandler apogeeEstData(EST_APOGEE, &dataSaver);
 
 CommandLine cmdLine(&Serial);
 HardwareSerial SUART1(PB7, PB6);
 
-void testCommand(queue<string> arguments, string& response);
-void ping(queue<string> arguments, string& response);
-void dumpFlash(queue<string> arguments, string& response);
-void clearPostLaunchMode(queue<string> arguments, string& response);
-void printStatus(queue<string> arguments, string& response);
+void testCommand(std::queue<std::string> arguments, std::string& response);
+void ping(std::queue<std::string> arguments, std::string& response);
+void dumpFlash(std::queue<std::string> arguments, std::string& response);
+void clearPostLaunchMode(std::queue<std::string> arguments, std::string& response);
+void printStatus(std::queue<std::string> arguments, std::string& response);
 
 void setup() {
 
@@ -129,6 +137,7 @@ void setup() {
     Serial.println("Failed to set Mag data rate");
   }
 
+  #ifndef NO_ALT // If not altimeter, then don't set it up
   while (! bmp.begin_SPI(SENSOR_BARO_CS)) {  // software SPI mode
     Serial.println("Could not find a valid BMP3 sensor, check wiring!");
     delay(10);
@@ -142,6 +151,8 @@ void setup() {
 
   bmp.setConversionDelay(10); // 10 ms == 100 Hz
   bmp.startConversion(); // Start the first conversion
+
+  #endif // NO_ALT
 
   Serial.println("Setting up data saver...");
 
@@ -169,6 +180,7 @@ void setup() {
   superLoopRate.restrictSaveSpeed(1000);
   altitudeData.restrictSaveSpeed(10); // Save altitude every 10 ms (100hz)
   flightIDSaver.restrictSaveSpeed(10000);
+  apogeeEstData.restrictSaveSpeed(10);
 
 
   // Loop start time
@@ -201,7 +213,7 @@ void loop() {
   }
 
   // Explicitly save a timestamp to ensure that all data from this loop is associated with the same timestamp and distinct from the previous loop
-  dataSaver.saveTimestamp(current_time, TIMESTAMP);
+  dataSaver.saveTimestamp(current_time);
 
   flightIDSaver.addData(DataPoint(current_time, flightID));
 
@@ -228,6 +240,8 @@ void loop() {
   yAclData.addData(yAclDataPoint);
   zAclData.addData(zAclDataPoint);
 
+  AccelerationTriplet aclTriplet = {xAclDataPoint, yAclDataPoint, zAclDataPoint};
+
   mag.getEvent(&mag_event);
 
   xMagData.addData(DataPoint(current_time, mag_event.magnetic.x));
@@ -237,6 +251,7 @@ void loop() {
 
 
   // Check periodically if a new reading is available
+  #ifndef NO_ALT
   if (bmp.updateConversion()) {
    
     float pres = bmp.getPressure();
@@ -258,15 +273,14 @@ void loop() {
     // Immediately start the next conversion
     bmp.startConversion();
   }
+  #endif // NO_ALT
 
-  // Will update the launch predictor and apogee detector
+  // Will update the launch detector and apogee detector
   // Will log updates to the data saver
-  // Will put the data saver in post-launch mode if the launch predictor detects a launch
+  // Will put the data saver in post-launch mode if the launch detector detects a launch
   // Serial.println("State machine update with alt of " + String(altDataPoint.data));
   stateMachine.update(
-    xAclDataPoint,
-    yAclDataPoint,
-    zAclDataPoint,
+    aclTriplet,
     altDataPoint
   );
 
@@ -274,6 +288,12 @@ void loop() {
     led_toggle_delay = 50;
   } else if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
     led_toggle_delay = 100;
+  }
+
+  // If post-launch, then start saving estimated apogee data
+  if (stateMachine.getState() >= STATE_ASCENT) {
+    apogeePredictor.update();
+    apogeeEstData.addData(DataPoint(current_time, apogeePredictor.getPredictedApogeeAltitude_m()));
   }
 
   xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
@@ -316,13 +336,13 @@ void testCommand(std::queue<std::string> arguments, std::string& response) {
 }
 
 
-void ping(queue<string> arguments, string& response) {
+void ping(std::queue<std::string> arguments, std::string& response) {
     cmdLine.println("Pinged the microntroller ");
 }
 
-void clearPostLaunchMode(queue<string> arguments, string& response) {
+void clearPostLaunchMode(std::queue<std::string> arguments, std::string& response) {
     dataSaver.clearPostLaunchMode();
-    launchPredictor.reset();
+    launchDetector.reset(); // fibo
     cmdLine.println("Cleared post launch mode, reboot the device to complete the reset.");
 }
 
@@ -347,28 +367,28 @@ void dumpFlash(std::queue<std::string> arguments, std::string& response) {
 }
 
 void printStatus(std::queue<std::string> arguments, std::string& response) {
-    cmdLine.println("--Launch Predictor--");
+    cmdLine.println("--Launch Detector--");
     cmdLine.print("Launched: ");
-    cmdLine.println(std::to_string(launchPredictor.isLaunched()));
+    cmdLine.println(std::to_string(launchDetector.isLaunched())); // fibo
     cmdLine.print("Launched Time: ");
-    cmdLine.println(floatToString(launchPredictor.getLaunchedTime()));
+    cmdLine.println(floatToString(launchDetector.getLaunchedTime())); // fibo
     cmdLine.print("Median Acceleration Squared: ");
-    cmdLine.println(floatToString(launchPredictor.getMedianAccelerationSquared()));
+    cmdLine.println(floatToString(launchDetector.getMedianAccelerationSquared())); // fibo
 
     cmdLine.println("");
     cmdLine.println("--Apogee Detector--");
     cmdLine.print("Apogee Detected: ");
     cmdLine.println(std::to_string(apogeeDetector.isApogeeDetected()));
     cmdLine.print("Estimated Altitude: ");
-    cmdLine.println(floatToString(apogeeDetector.getEstimatedAltitude()));
+    cmdLine.println(floatToString(verticalVelocityEstimator.getEstimatedAltitude()));
     cmdLine.print("Estimated Velocity: ");
-    cmdLine.println(floatToString(apogeeDetector.getEstimatedVelocity()));
+    cmdLine.println(floatToString(verticalVelocityEstimator.getEstimatedVelocity()));
     cmdLine.print("Inertial Vertical Acceleration: ");
-    cmdLine.println(floatToString(apogeeDetector.getInertialVerticalAcceleration()));
+    cmdLine.println(floatToString(verticalVelocityEstimator.getInertialVerticalAcceleration()));
     cmdLine.print("Vertical Axis: ");
-    cmdLine.println(std::to_string(apogeeDetector.getVerticalAxis()));
+    cmdLine.println(std::to_string(verticalVelocityEstimator.getVerticalAxis()));
     cmdLine.print("Vertical Direction: ");
-    cmdLine.println(std::to_string(apogeeDetector.getVerticalDirection()));
+    cmdLine.println(std::to_string(verticalVelocityEstimator.getVerticalDirection()));
     cmdLine.print("Apogee Altitude: ");
     cmdLine.println(floatToString(apogeeDetector.getApogee().data));
 
