@@ -20,6 +20,7 @@
 #include "data_handling/DataNames.h"
 #include "flash_config.h"
 #include "state_estimation/LaunchDetector.h"
+#include "state_estimation/FastLaunchDetector.h"
 #include "state_estimation/ApogeeDetector.h"
 #include "state_estimation/VerticalVelocityEstimator.h"
 #include "state_estimation/ApogeePredictor.h"
@@ -65,12 +66,13 @@ SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
 float flightID;
 
 LaunchDetector launchDetector(40, 500, 25);
+FastLaunchDetector fastLaunchDetector(30, 500);
 
 NoiseVariances noiseVariances {0.25f, 1.0f}; // Example variances
 
 VerticalVelocityEstimator verticalVelocityEstimator(noiseVariances);
 ApogeeDetector apogeeDetector(1.0f);
-StateMachine stateMachine(&dataSaver, &launchDetector, &apogeeDetector, &verticalVelocityEstimator);
+StateMachine stateMachine(&dataSaver, &launchDetector, &apogeeDetector, &verticalVelocityEstimator, &fastLaunchDetector);
 
 ApogeePredictor apogeePredictor(verticalVelocityEstimator);
 SensorDataHandler apogeeEstData(EST_APOGEE, &dataSaver);
