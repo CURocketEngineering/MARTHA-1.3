@@ -18,6 +18,7 @@
 #include "data_handling/SensorDataHandler.h"
 #include "data_handling/DataSaverSPI.h"
 #include "data_handling/DataNames.h"
+#include "data_handling/Telemetry.h"
 #include "flash_config.h"
 #include "state_estimation/LaunchDetector.h"
 #include "state_estimation/ApogeeDetector.h"
@@ -74,6 +75,21 @@ StateMachine stateMachine(&dataSaver, &launchDetector, &apogeeDetector, &vertica
 
 ApogeePredictor apogeePredictor(verticalVelocityEstimator);
 SensorDataHandler apogeeEstData(EST_APOGEE, &dataSaver);
+
+SendableSensorData* ssds[] {
+  new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xAclData, &yAclData, &zAclData}, 3, 102, 2),
+  new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xGyroData, &yGyroData, &zGyroData}, 3, 105, 2),
+  new SendableSensorData(&altitudeData, nullptr, 0, 0, 2),
+  new SendableSensorData(&apogeeEstData, nullptr, 0, 0, 2),
+  new SendableSensorData(&tempData, nullptr, 0, 0, 1),
+  new SendableSensorData(&pressureData, nullptr, 0, 0, 1),
+  new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xMagData, &yMagData, &zMagData}, 3, 111, 1),
+  new SendableSensorData(&superLoopRate, nullptr, 0, 1, 1),
+  new SendableSensorData(&stateChange, nullptr, 0, 1, 1),
+  new SendableSensorData(&flightIDSaver, nullptr, 0, 1, 1),
+};
+// HardwareSerial rfdSerialConnection(0, 1); //TODO: change txPin and rxPin to real values
+Telemetry telemetry(ssds, 10, Serial);
 
 CommandLine cmdLine(&Serial);
 HardwareSerial SUART1(PB7, PB6);
@@ -168,7 +184,7 @@ void setup() {
   cmdLine.addCommand("clear_plm", "cplm", clearPostLaunchMode);
   cmdLine.addCommand("status", "s", printStatus);
   cmdLine.addCommand("dump", "d", dumpFlash);
-  cmdLine.begin();
+  // cmdLine.begin();
 
 
   // Set save speeds
@@ -227,7 +243,7 @@ void loop() {
   #ifdef SIM
   SerialSim::getInstance().update();
   #else 
-  cmdLine.readInput();
+  //cmdLine.readInput();
   #endif
 
   sox.getEvent(&accel, &gyro, &temp);
@@ -301,6 +317,8 @@ void loop() {
   zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
 
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
+
+  telemetry.tick(current_time);
 
   // Throttle to 100 Hz
   int too_fast = millis() - current_time;  // current_time was captured at the start of the loop
