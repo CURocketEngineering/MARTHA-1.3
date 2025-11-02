@@ -62,6 +62,7 @@ SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
 SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
+SensorDataHandler currentState(CURRENT_STATE, &dataSaver);
 SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
 float flightID;
 
@@ -86,13 +87,13 @@ SendableSensorData* ssds[] {
   new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xMagData, &yMagData, &zMagData}, 3, 111, 1),
   new SendableSensorData(&superLoopRate, nullptr, 0, 1, 1),
   new SendableSensorData(&stateChange, nullptr, 0, 1, 1),
+  new SendableSensorData(&currentState, nullptr, 0, 1, 1),
   new SendableSensorData(&flightIDSaver, nullptr, 0, 1, 1),
 };
-// HardwareSerial rfdSerialConnection(0, 1); //TODO: change txPin and rxPin to real values
-Telemetry telemetry(ssds, 10, Serial);
+HardwareSerial SUART1(PB7, PB6);
+Telemetry telemetry(ssds, 10, SUART1);
 
 CommandLine cmdLine(&Serial);
-HardwareSerial SUART1(PB7, PB6);
 
 void testCommand(std::queue<std::string> arguments, std::string& response);
 void ping(std::queue<std::string> arguments, std::string& response);
@@ -106,6 +107,7 @@ void setup() {
 
 
   Serial.begin(115200);
+  SUART1.begin(57600);
   // while (!Serial) delay(10); // Wait for Serial Monitor (Comment out if not using)
 
 
@@ -184,7 +186,7 @@ void setup() {
   cmdLine.addCommand("clear_plm", "cplm", clearPostLaunchMode);
   cmdLine.addCommand("status", "s", printStatus);
   cmdLine.addCommand("dump", "d", dumpFlash);
-  // cmdLine.begin();
+  cmdLine.begin();
 
 
   // Set save speeds
@@ -197,6 +199,7 @@ void setup() {
   altitudeData.restrictSaveSpeed(10); // Save altitude every 10 ms (100hz)
   flightIDSaver.restrictSaveSpeed(10000);
   apogeeEstData.restrictSaveSpeed(10);
+  currentState.restrictSaveSpeed(2000);
 
 
   // Loop start time
@@ -243,7 +246,7 @@ void loop() {
   #ifdef SIM
   SerialSim::getInstance().update();
   #else 
-  //cmdLine.readInput();
+  cmdLine.readInput();
   #endif
 
   sox.getEvent(&accel, &gyro, &temp);
@@ -317,6 +320,7 @@ void loop() {
   zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
 
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
+  currentState.addData(DataPoint(current_time, stateMachine.getState()));
 
   telemetry.tick(current_time);
 
