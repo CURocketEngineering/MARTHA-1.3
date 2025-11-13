@@ -61,6 +61,8 @@ SensorDataHandler yMagData(MAGNETOMETER_Y, &dataSaver);
 SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
+int telemetryPacketCounter;
+SensorDataHandler telemetryPacketsSent(NUM_PACKETS_SENT, &dataSaver);
 SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
 SensorDataHandler currentState(CURRENT_STATE, &dataSaver);
 SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
@@ -78,6 +80,7 @@ ApogeePredictor apogeePredictor(verticalVelocityEstimator);
 SensorDataHandler apogeeEstData(EST_APOGEE, &dataSaver);
 
 SendableSensorData* ssds[] {
+  new SendableSensorData(&telemetryPacketsSent, nullptr, 0, 0, 2), //sendFrequencyHz must be the fastest frequency of any other packet sent below
   new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xAclData, &yAclData, &zAclData}, 3, 102, 2),
   new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xGyroData, &yGyroData, &zGyroData}, 3, 105, 2),
   new SendableSensorData(&altitudeData, nullptr, 0, 0, 2),
@@ -200,6 +203,7 @@ void setup() {
   flightIDSaver.restrictSaveSpeed(10000);
   apogeeEstData.restrictSaveSpeed(10);
   currentState.restrictSaveSpeed(2000);
+  telemetryPacketsSent.restrictSaveSpeed(1000);
 
 
   // Loop start time
@@ -321,8 +325,9 @@ void loop() {
 
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
   currentState.addData(DataPoint(current_time, stateMachine.getState()));
+  telemetryPacketsSent.addData(DataPoint(current_time, telemetryPacketCounter));
 
-  telemetry.tick(current_time);
+  if (telemetry.tick(current_time)) telemetryPacketCounter+=1;
 
   // Throttle to 100 Hz
   int too_fast = millis() - current_time;  // current_time was captured at the start of the loop
