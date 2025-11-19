@@ -18,6 +18,7 @@
 #include "data_handling/SensorDataHandler.h"
 #include "data_handling/DataSaverSPI.h"
 #include "data_handling/DataNames.h"
+#include "data_handling/Telemetry.h"
 #include "flash_config.h"
 #include "state_estimation/LaunchDetector.h"
 #include "state_estimation/FastLaunchDetector.h"
@@ -62,6 +63,7 @@ SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
 SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
+SensorDataHandler currentState(CURRENT_STATE, &dataSaver);
 SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
 float flightID;
 
@@ -77,8 +79,23 @@ StateMachine stateMachine(&dataSaver, &launchDetector, &apogeeDetector, &vertica
 ApogeePredictor apogeePredictor(verticalVelocityEstimator);
 SensorDataHandler apogeeEstData(EST_APOGEE, &dataSaver);
 
-CommandLine cmdLine(&Serial);
+SendableSensorData* ssds[] {
+  new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xAclData, &yAclData, &zAclData}, 3, 102, 2),
+  new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xGyroData, &yGyroData, &zGyroData}, 3, 105, 2),
+  new SendableSensorData(&altitudeData, nullptr, 0, 0, 2),
+  new SendableSensorData(&apogeeEstData, nullptr, 0, 0, 2),
+  new SendableSensorData(&tempData, nullptr, 0, 0, 1),
+  new SendableSensorData(&pressureData, nullptr, 0, 0, 1),
+  new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xMagData, &yMagData, &zMagData}, 3, 111, 1),
+  new SendableSensorData(&superLoopRate, nullptr, 0, 1, 1),
+  new SendableSensorData(&stateChange, nullptr, 0, 1, 1),
+  new SendableSensorData(&currentState, nullptr, 0, 1, 1),
+  new SendableSensorData(&flightIDSaver, nullptr, 0, 1, 1),
+};
 HardwareSerial SUART1(PB7, PB6);
+Telemetry telemetry(ssds, 10, SUART1);
+
+CommandLine cmdLine(&Serial);
 
 void testCommand(std::queue<std::string> arguments, std::string& response);
 void ping(std::queue<std::string> arguments, std::string& response);
@@ -92,6 +109,7 @@ void setup() {
 
 
   Serial.begin(115200);
+  SUART1.begin(57600);
   // while (!Serial) delay(10); // Wait for Serial Monitor (Comment out if not using)
 
 
@@ -183,6 +201,7 @@ void setup() {
   altitudeData.restrictSaveSpeed(10); // Save altitude every 10 ms (100hz)
   flightIDSaver.restrictSaveSpeed(10000);
   apogeeEstData.restrictSaveSpeed(10);
+  currentState.restrictSaveSpeed(2000);
 
 
   // Loop start time
@@ -305,6 +324,9 @@ void loop() {
   zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
 
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
+  currentState.addData(DataPoint(current_time, stateMachine.getState()));
+
+  telemetry.tick();
 
   // Throttle to 100 Hz
   int too_fast = millis() - current_time;  // current_time was captured at the start of the loop
