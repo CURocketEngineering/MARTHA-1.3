@@ -79,19 +79,32 @@ StateMachine stateMachine(&dataSaver, &launchDetector, &apogeeDetector, &vertica
 ApogeePredictor apogeePredictor(verticalVelocityEstimator);
 SensorDataHandler apogeeEstData(EST_APOGEE, &dataSaver);
 
+SendableSensorData telemetryPacketsSentSSD(&telemetryPacketsSent, nullptr, 0, 0, 2); //sendFrequencyHz must be the fastest frequency of any other packet sent below
+SendableSensorData aclDataSSD(nullptr, (SensorDataHandler*[]) {&xAclData, &yAclData, &zAclData}, 3, 102, 2);
+SendableSensorData gyroDataSSD(nullptr, (SensorDataHandler*[]) {&xGyroData, &yGyroData, &zGyroData}, 3, 105, 2);
+SendableSensorData altitudeDataSSD(&altitudeData, nullptr, 0, 0, 2);
+SendableSensorData apogeeEstDataSSD(&apogeeEstData, nullptr, 0, 0, 2);
+SendableSensorData tempDataSSD(&tempData, nullptr, 0, 0, 1);
+SendableSensorData pressureDataSSD(&pressureData, nullptr, 0, 0, 1);
+SendableSensorData magDataSSD(nullptr, (SensorDataHandler*[]) {&xMagData, &yMagData, &zMagData}, 3, 111, 1);
+SendableSensorData superLoopRateSSD(&superLoopRate, nullptr, 0, 1, 1);
+SendableSensorData stateChangeSSD(&stateChange, nullptr, 0, 1, 1);
+SendableSensorData currentStateSSD(&currentState, nullptr, 0, 1, 1);
+SendableSensorData flightIDSaverSSD(&flightIDSaver, nullptr, 0, 1, 1);
+
 SendableSensorData* ssds[] {
-  new SendableSensorData(&telemetryPacketsSent, nullptr, 0, 0, 2), //sendFrequencyHz must be the fastest frequency of any other packet sent below
-  new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xAclData, &yAclData, &zAclData}, 3, 102, 2),
-  new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xGyroData, &yGyroData, &zGyroData}, 3, 105, 2),
-  new SendableSensorData(&altitudeData, nullptr, 0, 0, 2),
-  new SendableSensorData(&apogeeEstData, nullptr, 0, 0, 2),
-  new SendableSensorData(&tempData, nullptr, 0, 0, 1),
-  new SendableSensorData(&pressureData, nullptr, 0, 0, 1),
-  new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xMagData, &yMagData, &zMagData}, 3, 111, 1),
-  new SendableSensorData(&superLoopRate, nullptr, 0, 1, 1),
-  new SendableSensorData(&stateChange, nullptr, 0, 1, 1),
-  new SendableSensorData(&currentState, nullptr, 0, 1, 1),
-  new SendableSensorData(&flightIDSaver, nullptr, 0, 1, 1),
+  &telemetryPacketsSentSSD, //sendFrequencyHz must be the fastest frequency of any other packet sent below
+  &aclDataSSD,
+  &gyroDataSSD,
+  &altitudeDataSSD,
+  &apogeeEstDataSSD,
+  &tempDataSSD,
+  &pressureDataSSD,
+  &magDataSSD,
+  &superLoopRateSSD,
+  &stateChangeSSD,
+  &currentStateSSD,
+  &flightIDSaverSSD,
 };
 HardwareSerial SUART1(PB7, PB6);
 Telemetry telemetry(ssds, 10, SUART1);
