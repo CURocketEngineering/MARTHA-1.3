@@ -290,6 +290,8 @@ void loop() {
     led_toggle_delay = 50;
   } else if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
     led_toggle_delay = 100;
+  } else if (stateMachine.getState() <= STATE_ARMED){
+    led_toggle_delay = 1000;
   }
 
   // If post-launch, then start saving estimated apogee data
