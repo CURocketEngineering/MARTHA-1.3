@@ -61,7 +61,7 @@ SensorDataHandler yMagData(MAGNETOMETER_Y, &dataSaver);
 SensorDataHandler zMagData(MAGNETOMETER_Z, &dataSaver);
 
 SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
-int telemetryPacketCounter;
+int telemetryPacketCounter = 1;
 SensorDataHandler telemetryPacketsSent(NUM_PACKETS_SENT, &dataSaver);
 SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
 SensorDataHandler currentState(CURRENT_STATE, &dataSaver);
@@ -79,7 +79,7 @@ StateMachine stateMachine(&dataSaver, &launchDetector, &apogeeDetector, &vertica
 ApogeePredictor apogeePredictor(verticalVelocityEstimator);
 SensorDataHandler apogeeEstData(EST_APOGEE, &dataSaver);
 
-SendableSensorData telemetryPacketsSentSSD(&telemetryPacketsSent, nullptr, 0, 0, 2); //sendFrequencyHz must be the fastest frequency of any other packet sent below
+SendableSensorData telemetryPacketsSentSSD(&telemetryPacketsSent, nullptr, 0, 0, 2); //sendFrequencyHz of this ssd must be the fastest frequency of any other packet sent below
 SendableSensorData aclDataSSD(nullptr, (SensorDataHandler*[]) {&xAclData, &yAclData, &zAclData}, 3, 102, 2);
 SendableSensorData gyroDataSSD(nullptr, (SensorDataHandler*[]) {&xGyroData, &yGyroData, &zGyroData}, 3, 105, 2);
 SendableSensorData altitudeDataSSD(&altitudeData, nullptr, 0, 0, 2);
@@ -93,7 +93,7 @@ SendableSensorData currentStateSSD(&currentState, nullptr, 0, 1, 1);
 SendableSensorData flightIDSaverSSD(&flightIDSaver, nullptr, 0, 1, 1);
 
 SendableSensorData* ssds[] {
-  &telemetryPacketsSentSSD, //sendFrequencyHz must be the fastest frequency of any other packet sent below
+  &telemetryPacketsSentSSD,
   &aclDataSSD,
   &gyroDataSSD,
   &altitudeDataSSD,
