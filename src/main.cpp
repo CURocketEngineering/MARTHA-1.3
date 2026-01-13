@@ -97,8 +97,6 @@ Telemetry telemetry(ssds, 10, SUART1);
 CommandLine cmdLine(&Serial);
 #include "commands.h"
 
-HardwareSerial SUART1(PB7, PB6);
-
 void setup() {
 
   pinMode(DEBUG_LED, OUTPUT); // LED 
