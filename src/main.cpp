@@ -67,8 +67,8 @@ SensorDataHandler currentState(CURRENT_STATE, &dataSaver);
 SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
 float flightID;
 
-LaunchDetector launchDetector(40, 500, 25);
-FastLaunchDetector fastLaunchDetector(30, 500);
+LaunchDetector launchDetector(30, 500, 25);
+FastLaunchDetector fastLaunchDetector(30, 1000);
 
 NoiseVariances noiseVariances {0.25f, 1.0f}; // Example variances
 
@@ -307,8 +307,8 @@ void loop() {
 
   if (stateMachine.getState() > STATE_ASCENT) {
     led_toggle_delay = 50;
-  } else if (stateMachine.getState() > STATE_ARMED || dataSaver.quickGetPostLaunchMode()) {
-    led_toggle_delay = 100;
+  } else if (stateMachine.getState() == STATE_SOFT_ASCENT) {
+    led_toggle_delay = 200;
   } else if (stateMachine.getState() <= STATE_ARMED){
     led_toggle_delay = 1000;
   }
@@ -326,7 +326,7 @@ void loop() {
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
   currentState.addData(DataPoint(current_time, stateMachine.getState()));
 
-  telemetry.tick();
+  telemetry.tick(current_time);
 
   // Throttle to 100 Hz
   int too_fast = millis() - current_time;  // current_time was captured at the start of the loop
@@ -393,6 +393,13 @@ void dumpFlash(std::queue<std::string> arguments, std::string& response) {
 }
 
 void printStatus(std::queue<std::string> arguments, std::string& response) {
+    cmdLine.println("--Fast Launch Detector--");
+    cmdLine.print("Launched: ");
+    cmdLine.println(std::to_string(fastLaunchDetector.hasLaunched())); // fibo
+    cmdLine.print("Launched Time: ");
+    cmdLine.println(floatToString(fastLaunchDetector.getLaunchedTime())); // fibo
+
+    cmdLine.println("");
     cmdLine.println("--Launch Detector--");
     cmdLine.print("Launched: ");
     cmdLine.println(std::to_string(launchDetector.isLaunched())); // fibo
