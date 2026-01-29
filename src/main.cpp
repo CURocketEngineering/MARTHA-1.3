@@ -67,7 +67,7 @@ SensorDataHandler currentState(CURRENT_STATE, &dataSaver);
 SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
 float flightID;
 
-LaunchDetector launchDetector(30, 500, 25);
+LaunchDetector launchDetector(40, 500, 25);
 FastLaunchDetector fastLaunchDetector(30, 1000);
 
 NoiseVariances noiseVariances {0.25f, 1.0f}; // Example variances
