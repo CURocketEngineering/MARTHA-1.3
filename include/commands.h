@@ -60,6 +60,13 @@ void dumpFlash(std::queue<std::string> arguments, std::string& response) {
 }
 
 void printStatus(std::queue<std::string> arguments, std::string& response) {
+    cmdLine.println("--Fast Launch Detector--");
+    cmdLine.print("Launched: ");
+    cmdLine.println(std::to_string(fastLaunchDetector.hasLaunched()));
+    cmdLine.print("Launched Time: ");
+    cmdLine.println(floatToString(fastLaunchDetector.getLaunchedTime()));
+    cmdLine.print("");
+
     cmdLine.println("--Launch Detector--");
     cmdLine.print("Launched: ");
     cmdLine.println(std::to_string(launchDetector.isLaunched())); // fibo
