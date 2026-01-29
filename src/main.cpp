@@ -301,7 +301,7 @@ void loop() {
     altDataPoint
   );
 
-  if (stateMachine.getState() > STATE_ASCENT) {
+  if (stateMachine.getState() >= STATE_ASCENT) {
     led_toggle_delay = 50;
   } else if (stateMachine.getState() == STATE_SOFT_ASCENT) {
     led_toggle_delay = 200;
