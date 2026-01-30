@@ -35,7 +35,7 @@ void test_flash_write_read() {
     uint8_t read_data = 0;
 
     // Erase a sector to ensure clean write
-    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS));
+    TEST_ASSERT_EQUAL(true, flash.eraseSector(TEST_ADDRESS / SFLASH_SECTOR_SIZE));
 
     // Write data to the flash
     TEST_ASSERT_EQUAL(true, flash.writeBuffer(TEST_ADDRESS, &write_data, 1));
