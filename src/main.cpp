@@ -215,6 +215,7 @@ void setup() {
   while (!Serial) delay(10);
   SerialSim::getInstance().begin(&Serial, &stateMachine); 
   dataSaver.clearPostLaunchMode(); // Clear plm for sim
+  dataSaver.clearInternalState();
   #endif
 
 }
