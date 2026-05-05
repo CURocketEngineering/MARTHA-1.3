@@ -12,6 +12,7 @@
 #endif
 
 #include <Adafruit_Sensor.h>
+#include <ADS1118.h>
 #include "pins.h"
 #include "UARTCommandHandler.h"
 
@@ -38,6 +39,7 @@ uint32_t start_time_s = 0;
 
 Adafruit_LSM6DSOX sox;
 Adafruit_LIS3MDL  mag;
+ADS1118 externalAdc;
 
 
 Adafruit_SPIFlash flash(&flashTransport);
@@ -59,6 +61,7 @@ SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
 SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
 SensorDataHandler currentState(CURRENT_STATE, &dataSaver);
 SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
+SensorDataHandler externalAdcVoltageData(EXTERNAL_ADC_VOLTAGE, &dataSaver);
 float flightID;
 
 LaunchDetector launchDetector(40, 500, 25);
@@ -133,6 +136,12 @@ void setup() {
     Serial.println("Failed to set Mag data rate");
   }
 
+  Serial.println("Setting up external ADC...");
+  externalAdc.begin_SPI(EXTERNAL_ADC_CS);
+  externalAdc.setSamplingRate(externalAdc.RATE_860SPS);
+  externalAdc.setInputSelected(externalAdc.AIN_0);
+  externalAdc.setFullScaleRange(externalAdc.FSR_4096);
+
   Serial.println("Setting up data saver...");
 
   // Initalize data saver
@@ -158,6 +167,7 @@ void setup() {
   flightIDSaver.restrictSaveSpeed(10000);
   apogeeEstData.restrictSaveSpeed(10);
   currentState.restrictSaveSpeed(2000);
+  externalAdcVoltageData.restrictSaveSpeed(10);
 
 
   // Loop start time
@@ -226,6 +236,7 @@ void loop() {
   yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
   zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
 
+  externalAdcVoltageData.addData(DataPoint(current_time, externalAdc.getMilliVolts() / 1000.0f));
 
   // Will update the launch detector and apogee detector
   // Will log updates to the data saver
@@ -257,4 +268,3 @@ void loop() {
     delay(10 - too_fast);
   }
 }
-
