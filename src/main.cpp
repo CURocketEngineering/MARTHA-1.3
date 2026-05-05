@@ -12,7 +12,8 @@
 #endif
 
 #include <Adafruit_Sensor.h>
-#include <ADS1118.h>
+#include <DallasTemperature.h>
+#include <OneWire.h>
 #include "pins.h"
 #include "UARTCommandHandler.h"
 
@@ -30,16 +31,19 @@
 #include "state_estimation/StateMachine.h"
 
 #define SEALEVELPRESSURE_HPA (1013.25)
+#define PROBE_TEMPERATURE_INTERVAL_MS 100
 
 
 int last_led_toggle = 0;
 int led_toggle_delay = 1000;
 float loop_count = 0;
 uint32_t start_time_s = 0;
+uint32_t last_probe_temperature_request_ms = 0;
 
 Adafruit_LSM6DSOX sox;
 Adafruit_LIS3MDL  mag;
-ADS1118 externalAdc;
+OneWire probeTemperatureOneWire(PROBE_TEMPERATURE_PIN);
+DallasTemperature probeTemperatureSensor(&probeTemperatureOneWire);
 
 
 Adafruit_SPIFlash flash(&flashTransport);
@@ -61,7 +65,7 @@ SensorDataHandler superLoopRate(AVERAGE_CYCLE_RATE, &dataSaver);
 SensorDataHandler stateChange(STATE_CHANGE, &dataSaver);
 SensorDataHandler currentState(CURRENT_STATE, &dataSaver);
 SensorDataHandler flightIDSaver(FLIGHT_ID, &dataSaver);
-SensorDataHandler externalAdcVoltageData(EXTERNAL_ADC_VOLTAGE, &dataSaver);
+SensorDataHandler probeTemperatureData(PROBE_TEMPERATURE, &dataSaver);
 float flightID;
 
 LaunchDetector launchDetector(40, 500, 25);
@@ -136,11 +140,12 @@ void setup() {
     Serial.println("Failed to set Mag data rate");
   }
 
-  Serial.println("Setting up external ADC...");
-  externalAdc.begin_SPI(EXTERNAL_ADC_CS);
-  externalAdc.setSamplingRate(externalAdc.RATE_860SPS);
-  externalAdc.setInputSelected(externalAdc.AIN_0);
-  externalAdc.setFullScaleRange(externalAdc.FSR_4096);
+  Serial.println("Setting up probe temperature sensor...");
+  probeTemperatureSensor.begin();
+  probeTemperatureSensor.setResolution(9);
+  probeTemperatureSensor.setWaitForConversion(false);
+  probeTemperatureSensor.requestTemperatures();
+  last_probe_temperature_request_ms = millis();
 
   Serial.println("Setting up data saver...");
 
@@ -159,7 +164,7 @@ void setup() {
   cmdLine.begin();
 
 
-  // Set save speeds
+  // Set save speeds (ms interval between saves)
   xMagData.restrictSaveSpeed(1000);
   yMagData.restrictSaveSpeed(1000);
   zMagData.restrictSaveSpeed(1000);
@@ -167,8 +172,9 @@ void setup() {
   flightIDSaver.restrictSaveSpeed(10000);
   apogeeEstData.restrictSaveSpeed(10);
   currentState.restrictSaveSpeed(2000);
-  externalAdcVoltageData.restrictSaveSpeed(10);
 
+  // Payload temperature data 10 times per second (100 ms interval)
+  probeTemperatureData.restrictSaveSpeed(100);
 
   // Loop start time
   start_time_s = millis() / 1000;
@@ -236,7 +242,14 @@ void loop() {
   yMagData.addData(DataPoint(current_time, mag_event.magnetic.y));
   zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
 
-  externalAdcVoltageData.addData(DataPoint(current_time, externalAdc.getMilliVolts() / 1000.0f));
+  if (current_time - last_probe_temperature_request_ms >= PROBE_TEMPERATURE_INTERVAL_MS) {
+    float probe_temperature_c = probeTemperatureSensor.getTempCByIndex(0);
+    if (probe_temperature_c != DEVICE_DISCONNECTED_C) {
+      probeTemperatureData.addData(DataPoint(current_time, probe_temperature_c));
+    }
+    probeTemperatureSensor.requestTemperatures();
+    last_probe_temperature_request_ms = current_time;
+  }
 
   // Will update the launch detector and apogee detector
   // Will log updates to the data saver
