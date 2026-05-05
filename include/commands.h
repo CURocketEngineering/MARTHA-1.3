@@ -133,12 +133,6 @@ void printStatus(std::queue<std::string> arguments, std::string& response) {
     cmdLine.println(floatToString(yGyroData.getLastDataPointSaved().data));
     cmdLine.print("Gyroscope Z: ");
     cmdLine.println(floatToString(zGyroData.getLastDataPointSaved().data));
-    cmdLine.print("Temperature: ");
-    cmdLine.println(floatToString(tempData.getLastDataPointSaved().data));
-    cmdLine.print("Pressure: ");
-    cmdLine.println(floatToString(pressureData.getLastDataPointSaved().data));
-    cmdLine.print("Altitude: ");
-    cmdLine.println(floatToString(altitudeData.getLastDataPointSaved().data));
     cmdLine.print("Magnetometer X: ");
     cmdLine.println(floatToString(xMagData.getLastDataPointSaved().data));
     cmdLine.print("Magnetometer Y: ");

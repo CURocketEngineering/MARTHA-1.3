@@ -38,7 +38,6 @@ uint32_t start_time_s = 0;
 
 Adafruit_LSM6DSOX sox;
 Adafruit_LIS3MDL  mag;
-Adafruit_BMP3XX   bmp;
 
 
 Adafruit_SPIFlash flash(&flashTransport);
@@ -51,11 +50,6 @@ SensorDataHandler zAclData(ACCELEROMETER_Z, &dataSaver);
 SensorDataHandler xGyroData(GYROSCOPE_X, &dataSaver);
 SensorDataHandler yGyroData(GYROSCOPE_Y, &dataSaver);
 SensorDataHandler zGyroData(GYROSCOPE_Z, &dataSaver);
-
-SensorDataHandler tempData(TEMPERATURE, &dataSaver);
-SensorDataHandler pressureData(PRESSURE, &dataSaver);
-SensorDataHandler altitudeData(ALTITUDE, &dataSaver);
-DataPoint altDataPoint;
 
 SensorDataHandler xMagData(MAGNETOMETER_X, &dataSaver);
 SensorDataHandler yMagData(MAGNETOMETER_Y, &dataSaver);
@@ -76,24 +70,10 @@ VerticalVelocityEstimator verticalVelocityEstimator(noiseVariances);
 ApogeeDetector apogeeDetector(1.0f);
 StateMachine stateMachine(&dataSaver, &launchDetector, &apogeeDetector, &verticalVelocityEstimator, &fastLaunchDetector);
 
-ApogeePredictor apogeePredictor(verticalVelocityEstimator);
 SensorDataHandler apogeeEstData(EST_APOGEE, &dataSaver);
 
-SendableSensorData* ssds[] {
-  new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xAclData, &yAclData, &zAclData}, 3, 102, 2),
-  new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xGyroData, &yGyroData, &zGyroData}, 3, 105, 2),
-  new SendableSensorData(&altitudeData, nullptr, 0, 0, 2),
-  new SendableSensorData(&apogeeEstData, nullptr, 0, 0, 2),
-  new SendableSensorData(&tempData, nullptr, 0, 0, 1),
-  new SendableSensorData(&pressureData, nullptr, 0, 0, 1),
-  new SendableSensorData(nullptr, (SensorDataHandler*[]) {&xMagData, &yMagData, &zMagData}, 3, 111, 1),
-  new SendableSensorData(&superLoopRate, nullptr, 0, 1, 1),
-  new SendableSensorData(&stateChange, nullptr, 0, 1, 1),
-  new SendableSensorData(&currentState, nullptr, 0, 1, 1),
-  new SendableSensorData(&flightIDSaver, nullptr, 0, 1, 1),
-};
+
 HardwareSerial SUART1(PB7, PB6);
-Telemetry telemetry(ssds, 10, SUART1);
 
 // Grab the commands
 CommandLine cmdLine(&Serial);
@@ -153,23 +133,6 @@ void setup() {
     Serial.println("Failed to set Mag data rate");
   }
 
-  #ifndef NO_ALT // If not altimeter, then don't set it up
-  while (! bmp.begin_SPI(SENSOR_BARO_CS)) {  // software SPI mode
-    Serial.println("Could not find a valid BMP3 sensor, check wiring!");
-    delay(10);
-  }
-
-  // Set up oversampling and filter initialization
-  bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
-  bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
-  bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
-  bmp.setOutputDataRate(BMP3_ODR_100_HZ);
-
-  bmp.setConversionDelay(10); // 10 ms == 100 Hz
-  bmp.startConversion(); // Start the first conversion
-
-  #endif // NO_ALT
-
   Serial.println("Setting up data saver...");
 
   // Initalize data saver
@@ -188,13 +151,10 @@ void setup() {
 
 
   // Set save speeds
-  tempData.restrictSaveSpeed(1000);
-  pressureData.restrictSaveSpeed(1000);
   xMagData.restrictSaveSpeed(1000);
   yMagData.restrictSaveSpeed(1000);
   zMagData.restrictSaveSpeed(1000);
   superLoopRate.restrictSaveSpeed(1000);
-  altitudeData.restrictSaveSpeed(10); // Save altitude every 10 ms (100hz)
   flightIDSaver.restrictSaveSpeed(10000);
   apogeeEstData.restrictSaveSpeed(10);
   currentState.restrictSaveSpeed(2000);
@@ -267,39 +227,13 @@ void loop() {
   zMagData.addData(DataPoint(current_time, mag_event.magnetic.z));
 
 
-
-  // Check periodically if a new reading is available
-  #ifndef NO_ALT
-  if (bmp.updateConversion()) {
-   
-    float pres = bmp.getPressure();
-    #ifdef SIM
-      float alt = bmp.getAlt();
-    #else
-      // Simulation data might not store pressure in the same units, while meters is standard for alt
-      float alt = 44330.0 * (1.0 - pow(pres / 100.0f / SEALEVELPRESSURE_HPA, 0.1903));
-    #endif
-    float temp = bmp.getTemperature();
-
-    
-    tempData.addData(DataPoint(current_time, temp));
-    pressureData.addData(DataPoint(current_time, pres));
-    altDataPoint.data = alt;
-    altDataPoint.timestamp_ms = current_time;
-    altitudeData.addData(altDataPoint);
-    
-    // Immediately start the next conversion
-    bmp.startConversion();
-  }
-  #endif // NO_ALT
-
   // Will update the launch detector and apogee detector
   // Will log updates to the data saver
   // Will put the data saver in post-launch mode if the launch detector detects a launch
   // Serial.println("State machine update with alt of " + String(altDataPoint.data));
   stateMachine.update(
     aclTriplet,
-    altDataPoint
+    DataPoint{current_time, 0.0f}  // Placeholder altitude of 0
   );
 
   if (stateMachine.getState() >= STATE_ASCENT) {
@@ -310,20 +244,12 @@ void loop() {
     led_toggle_delay = 1000;
   }
 
-  // If post-launch, then start saving estimated apogee data
-  if (stateMachine.getState() >= STATE_ASCENT) {
-    apogeePredictor.poly_update();
-    apogeeEstData.addData(DataPoint(current_time, apogeePredictor.getPredictedApogeeAltitude_m()));
-  }
-
   xGyroData.addData(DataPoint(current_time, gyro.gyro.x));
   yGyroData.addData(DataPoint(current_time, gyro.gyro.y));
   zGyroData.addData(DataPoint(current_time, gyro.gyro.z));
 
   superLoopRate.addData(DataPoint(current_time, loop_count / (millis() / 1000 - start_time_s)));
   currentState.addData(DataPoint(current_time, stateMachine.getState()));
-
-  telemetry.tick(current_time);
 
   // Throttle to 100 Hz
   int too_fast = millis() - current_time;  // current_time was captured at the start of the loop
