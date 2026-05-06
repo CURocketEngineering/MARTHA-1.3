@@ -139,5 +139,6 @@ void printStatus(std::queue<std::string> arguments, std::string& response) {
     cmdLine.println(floatToString(yMagData.getLastDataPointSaved().data));
     cmdLine.print("Magnetometer Z: ");
     cmdLine.println(floatToString(zMagData.getLastDataPointSaved().data));
+    cmdLine.print("Probe Temperature C: ");
+    cmdLine.println(floatToString(probeTemperatureData.getLastDataPointSaved().data));
 }
-
